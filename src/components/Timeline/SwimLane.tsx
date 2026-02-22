@@ -32,8 +32,10 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
     const relativeX = e.clientX - laneRect.left;
     const clickedDate = xToDate(relativeX, renderStartDate);
 
-    // Create a new 3-day block centered on the clicked date
+    // Pre-generate the ID so we can reference it immediately
+    const id = crypto.randomUUID();
     const newBlock = {
+      id,
       memberId: member.id,
       title: 'New Block',
       startDate: addDaysToISO(clickedDate, -1),
@@ -41,19 +43,9 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
       color: 'blue' as const,
     };
 
-    // Add the block and get the new block ID from the store
     addBlock(newBlock);
-
-    // Open edit modal for the newly created block (it'll be the last one added)
-    // Use setTimeout to let state update first
-    setTimeout(() => {
-      const state = useAppStore.getState();
-      const lastBlock = state.blocks[state.blocks.length - 1];
-      if (lastBlock) {
-        useAppStore.setState({ newBlockId: lastBlock.id });
-        state.openEditModal(lastBlock.id);
-      }
-    }, 0);
+    useAppStore.setState({ newBlockId: id });
+    openEditModal(id);
   }, [member.id, renderStartDate, addBlock, openEditModal]);
 
   return (

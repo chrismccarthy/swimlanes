@@ -20,14 +20,18 @@ export interface Block {
 export interface Member {
   id: string;
   name: string;
-  order: number;
+  sortOrder: number;
 }
 
-export interface AppState {
-  members: Member[];
-  blocks: Block[];
-  sprintAnchorDate: string;
-  sprintLengthDays: number;
+export interface SprintConfig {
+  anchorDate: string;
+  lengthDays: number;
+}
+
+export interface Toast {
+  id: string;
+  message: string;
+  type: 'error' | 'info';
 }
 
 export interface ContextMenuState {

@@ -13,12 +13,17 @@ export function useResizeBlock(blockId: string, side: ResizeSide) {
     e.preventDefault();
     e.stopPropagation();
 
+    // Bail if offline
+    if (!useAppStore.getState().isOnline) return;
+
     const startX = e.clientX;
     const block = useAppStore.getState().blocks.find(b => b.id === blockId);
     if (!block) return;
 
     const originalStartDate = block.startDate;
     const originalEndDate = block.endDate;
+
+    useAppStore.getState().lockBlock(blockId);
 
     const onPointerMove = (e: PointerEvent) => {
       const deltaX = e.clientX - startX;
@@ -42,6 +47,8 @@ export function useResizeBlock(blockId: string, side: ResizeSide) {
     const onPointerUp = () => {
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', onPointerUp);
+      useAppStore.getState().unlockBlock(blockId);
+      useAppStore.getState().commitBlock(blockId);
     };
 
     document.addEventListener('pointermove', onPointerMove);

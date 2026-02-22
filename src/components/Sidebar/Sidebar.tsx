@@ -10,7 +10,7 @@ export function Sidebar() {
   const setSettingsOpen = useAppStore(s => s.setSettingsOpen);
 
   const sortedMembers = useMemo(
-    () => [...members].sort((a, b) => a.order - b.order),
+    () => [...members].sort((a, b) => a.sortOrder - b.sortOrder),
     [members]
   );
 

@@ -16,6 +16,9 @@ export function useDragBlock(blockId: string) {
     const target = e.target as HTMLElement;
     if (target.closest('[class*="handle"]')) return;
 
+    // Bail if offline
+    if (!useAppStore.getState().isOnline) return;
+
     // Don't prevent default or stop propagation yet — let click/doubleClick fire
     const startX = e.clientX;
     const startY = e.clientY;
@@ -36,6 +39,7 @@ export function useDragBlock(blockId: string) {
       if (!isDragging.current) {
         isDragging.current = true;
         setDraggingBlock(blockId);
+        useAppStore.getState().lockBlock(blockId);
         // Now that we know it's a real drag, capture the pointer
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       }
@@ -51,6 +55,8 @@ export function useDragBlock(blockId: string) {
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', onPointerUp);
       if (isDragging.current) {
+        useAppStore.getState().unlockBlock(blockId);
+        useAppStore.getState().commitBlock(blockId);
         setDraggingBlock(null);
       }
       isDragging.current = false;
@@ -58,7 +64,7 @@ export function useDragBlock(blockId: string) {
 
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
-  }, [blockId, updateBlock]);
+  }, [blockId, updateBlock, setDraggingBlock]);
 
   return { onPointerDown, isDragging };
 }

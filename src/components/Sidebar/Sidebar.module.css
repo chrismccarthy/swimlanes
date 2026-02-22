@@ -74,31 +74,29 @@
   outline: none;
 }
 
-.reorderBtn {
-  background: none;
-  border: none;
-  font-size: 14px;
-  color: #94a3b8;
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: 4px;
+.dragHandle {
+  font-size: 12px;
+  color: #cbd5e1;
+  cursor: grab;
+  padding: 2px 2px;
   line-height: 1;
+  letter-spacing: -3px;
+  user-select: none;
+  touch-action: none;
   opacity: 0;
   transition: opacity 0.15s;
 }
 
-.memberRow:hover .reorderBtn {
+.memberRow:hover .dragHandle {
   opacity: 1;
 }
 
-.reorderBtn:hover:not(:disabled) {
-  color: #3b82f6;
-  background: #eff6ff;
+.dragHandle:hover {
+  color: #94a3b8;
 }
 
-.reorderBtn:disabled {
-  cursor: default;
-  color: #cbd5e1;
+.dragHandle:active {
+  cursor: grabbing;
 }
 
 .deleteBtn {

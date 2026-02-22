@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { Member } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { useDragMember } from '../../hooks/useDragMember';
 import { assignTracks, computeRowHeight } from '../../lib/layout';
 import styles from './Sidebar.module.css';
 
@@ -11,15 +12,9 @@ interface MemberRowProps {
 export function MemberRow({ member }: MemberRowProps) {
   const renameMember = useAppStore(s => s.renameMember);
   const removeMember = useAppStore(s => s.removeMember);
-  const moveMemberUp = useAppStore(s => s.moveMemberUp);
-  const moveMemberDown = useAppStore(s => s.moveMemberDown);
-  const members = useAppStore(s => s.members);
   const blocks = useAppStore(s => s.blocks);
 
-  const sortedMembers = [...members].sort((a, b) => a.order - b.order);
-  const memberIndex = sortedMembers.findIndex(m => m.id === member.id);
-  const isFirst = memberIndex === 0;
-  const isLast = memberIndex === sortedMembers.length - 1;
+  const { onPointerDown: onDragPointerDown } = useDragMember(member.id);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(member.name);
@@ -72,7 +67,14 @@ export function MemberRow({ member }: MemberRowProps) {
   }, [member.id, member.name, memberBlocks.length, removeMember]);
 
   return (
-    <div className={styles.memberRow} style={{ height: rowHeight }}>
+    <div className={styles.memberRow} style={{ height: rowHeight }} data-member-id={member.id}>
+      <span
+        className={styles.dragHandle}
+        onPointerDown={onDragPointerDown}
+        title="Drag to reorder"
+      >
+        &#8942;&#8942;
+      </span>
       {isEditing ? (
         <input
           ref={inputRef}
@@ -87,22 +89,6 @@ export function MemberRow({ member }: MemberRowProps) {
           {member.name}
         </span>
       )}
-      <button
-        className={styles.reorderBtn}
-        onClick={() => moveMemberUp(member.id)}
-        disabled={isFirst}
-        title="Move up"
-      >
-        &#8593;
-      </button>
-      <button
-        className={styles.reorderBtn}
-        onClick={() => moveMemberDown(member.id)}
-        disabled={isLast}
-        title="Move down"
-      >
-        &#8595;
-      </button>
       <button
         className={styles.deleteBtn}
         onClick={handleDelete}

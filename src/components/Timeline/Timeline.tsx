@@ -31,7 +31,7 @@ export function Timeline() {
 
   // Compute total height from all swim lane rows
   const sortedMembers = useMemo(
-    () => [...members].sort((a, b) => a.order - b.order),
+    () => [...members].sort((a, b) => a.sortOrder - b.sortOrder),
     [members]
   );
 
