@@ -17,6 +17,7 @@ interface AppStore {
   isSettingsOpen: boolean;
   editingBlockId: string | null;
   draggingBlockId: string | null;
+  newBlockId: string | null;
   renderStartDate: string;
   renderEndDate: string;
 
@@ -107,6 +108,7 @@ export const useAppStore = create<AppStore>()(
       isSettingsOpen: false,
       editingBlockId: null,
       draggingBlockId: null,
+      newBlockId: null,
       renderStartDate: addDaysToISO(today, -14),
       renderEndDate: addDaysToISO(today, 90),
 
@@ -223,6 +225,7 @@ export const useAppStore = create<AppStore>()(
       closeModal: () => set({
         isModalOpen: false,
         editingBlockId: null,
+        newBlockId: null,
       }),
 
       setSettingsOpen: (open: boolean) => set({ isSettingsOpen: open }),

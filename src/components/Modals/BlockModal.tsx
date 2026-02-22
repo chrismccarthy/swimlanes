@@ -8,8 +8,10 @@ import styles from './BlockModal.module.css';
 export function BlockModal() {
   const isModalOpen = useAppStore(s => s.isModalOpen);
   const editingBlockId = useAppStore(s => s.editingBlockId);
+  const newBlockId = useAppStore(s => s.newBlockId);
   const blocks = useAppStore(s => s.blocks);
   const updateBlock = useAppStore(s => s.updateBlock);
+  const deleteBlock = useAppStore(s => s.deleteBlock);
   const closeModal = useAppStore(s => s.closeModal);
 
   const block = blocks.find(b => b.id === editingBlockId);
@@ -28,6 +30,15 @@ export function BlockModal() {
     }
   }, [block]);
 
+  const handleCancel = useCallback(() => {
+    // If this was a freshly created block (via double-click) that was never saved,
+    // delete it so it doesn't orphan on the timeline
+    if (editingBlockId && editingBlockId === newBlockId) {
+      deleteBlock(editingBlockId);
+    }
+    closeModal();
+  }, [editingBlockId, newBlockId, deleteBlock, closeModal]);
+
   const handleSave = useCallback(() => {
     if (!editingBlockId || !title.trim()) return;
     if (startDate > endDate) return;
@@ -41,9 +52,9 @@ export function BlockModal() {
   }, [editingBlockId, title, startDate, endDate, color, updateBlock, closeModal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') closeModal();
+    if (e.key === 'Escape') handleCancel();
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
-  }, [closeModal, handleSave]);
+  }, [handleCancel, handleSave]);
 
   if (!isModalOpen || !block) return null;
 
@@ -52,7 +63,7 @@ export function BlockModal() {
   const isValid = !hasDateError && !hasTitleError;
 
   return createPortal(
-    <div className={styles.overlay} onClick={closeModal} onKeyDown={handleKeyDown}>
+    <div className={styles.overlay} onClick={handleCancel} onKeyDown={handleKeyDown}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
         <h2 className={styles.heading}>Edit Block</h2>
 
@@ -97,7 +108,7 @@ export function BlockModal() {
         </label>
 
         <div className={styles.actions}>
-          <button className={styles.cancelBtn} onClick={closeModal}>
+          <button className={styles.cancelBtn} onClick={handleCancel}>
             Cancel
           </button>
           <button className={styles.saveBtn} onClick={handleSave} disabled={!isValid}>

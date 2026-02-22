@@ -50,7 +50,8 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
       const state = useAppStore.getState();
       const lastBlock = state.blocks[state.blocks.length - 1];
       if (lastBlock) {
-        useAppStore.getState().openEditModal(lastBlock.id);
+        useAppStore.setState({ newBlockId: lastBlock.id });
+        state.openEditModal(lastBlock.id);
       }
     }, 0);
   }, [member.id, renderStartDate, addBlock, openEditModal]);
