@@ -1,7 +1,8 @@
 import { useRef, useCallback, useMemo, useEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { daysBetween, isoToday } from '../../lib/dates';
-import { dateToX, DAY_WIDTH, HEADER_HEIGHT, assignTracks, computeRowHeight } from '../../lib/layout';
+import { dateToX, DAY_WIDTH, assignTracks, computeRowHeight } from '../../lib/layout';
 import { TimelineHeader } from './TimelineHeader';
 import { BackgroundGrid } from './BackgroundGrid';
 import { SwimLane } from './SwimLane';
@@ -64,21 +65,18 @@ export function Timeline() {
     if (scrollLeft < SCROLL_BUFFER) {
       isExpandingRef.current = true;
       const addedWidth = EXPANSION_DAYS * DAY_WIDTH;
-      expandTimelineBefore(EXPANSION_DAYS);
-      // After state updates, adjust scroll to maintain position
-      requestAnimationFrame(() => {
-        container.scrollLeft = scrollLeft + addedWidth;
-        isExpandingRef.current = false;
-      });
+      // flushSync forces React to render synchronously so the DOM expands
+      // before we adjust scrollLeft — prevents the violent jump bug
+      flushSync(() => expandTimelineBefore(EXPANSION_DAYS));
+      container.scrollLeft = scrollLeft + addedWidth;
+      isExpandingRef.current = false;
     }
 
     // Expand right
     if (scrollWidth - scrollLeft - clientWidth < SCROLL_BUFFER) {
       isExpandingRef.current = true;
-      expandTimelineAfter(EXPANSION_DAYS);
-      requestAnimationFrame(() => {
-        isExpandingRef.current = false;
-      });
+      flushSync(() => expandTimelineAfter(EXPANSION_DAYS));
+      isExpandingRef.current = false;
     }
   }, [expandTimelineBefore, expandTimelineAfter]);
 

@@ -74,6 +74,33 @@
   outline: none;
 }
 
+.reorderBtn {
+  background: none;
+  border: none;
+  font-size: 14px;
+  color: #94a3b8;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.memberRow:hover .reorderBtn {
+  opacity: 1;
+}
+
+.reorderBtn:hover:not(:disabled) {
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+.reorderBtn:disabled {
+  cursor: default;
+  color: #cbd5e1;
+}
+
 .deleteBtn {
   background: none;
   border: none;

@@ -34,7 +34,7 @@ export function BackgroundGrid({
   return (
     <div className={styles.grid} style={{ height: totalHeight }}>
       {/* Sprint alternating bands */}
-      {sprints.map((sprint, i) => {
+      {sprints.map((sprint) => {
         const startOffset = daysBetween(renderStartDate, sprint.startDate);
         const endOffset = daysBetween(renderStartDate, sprint.endDate);
         const visibleStart = Math.max(0, startOffset);

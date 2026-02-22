@@ -20,6 +20,9 @@ export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
   const setContextMenu = useAppStore(s => s.setContextMenu);
   const selectedBlockId = useAppStore(s => s.selectedBlockId);
   const setSelectedBlock = useAppStore(s => s.setSelectedBlock);
+  const draggingBlockId = useAppStore(s => s.draggingBlockId);
+
+  const isBeingDragged = draggingBlockId === block.id;
 
   const colors = BLOCK_COLORS[block.color];
   const left = dateToX(block.startDate, renderStartDate);
@@ -62,6 +65,7 @@ export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
         backgroundColor: colors.bg,
         borderColor: colors.border,
         color: colors.text,
+        ...(isBeingDragged ? { transition: 'box-shadow 0.15s ease' } : {}),
       }}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}

@@ -7,7 +7,6 @@ export function ContextMenu() {
   const openEditModal = useAppStore(s => s.openEditModal);
   const duplicateBlock = useAppStore(s => s.duplicateBlock);
   const deleteBlock = useAppStore(s => s.deleteBlock);
-  const setContextMenu = useAppStore(s => s.setContextMenu);
 
   useContextMenuDismiss();
 
@@ -25,7 +24,9 @@ export function ContextMenu() {
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteBlock(contextMenu.blockId);
+    if (window.confirm('Delete this block?')) {
+      deleteBlock(contextMenu.blockId);
+    }
   };
 
   return (

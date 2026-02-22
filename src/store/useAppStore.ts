@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Block, Member, BlockColor, ContextMenuState } from '../types';
+import type { Block, Member, ContextMenuState } from '../types';
 import { isoToday, addDaysToISO } from '../lib/dates';
 
 interface AppStore {
@@ -16,6 +16,7 @@ interface AppStore {
   isModalOpen: boolean;
   isSettingsOpen: boolean;
   editingBlockId: string | null;
+  draggingBlockId: string | null;
   renderStartDate: string;
   renderEndDate: string;
 
@@ -23,6 +24,8 @@ interface AppStore {
   addMember: (name: string) => void;
   removeMember: (id: string) => void;
   renameMember: (id: string, name: string) => void;
+  moveMemberUp: (id: string) => void;
+  moveMemberDown: (id: string) => void;
 
   // Block actions
   addBlock: (block: Omit<Block, 'id'>) => void;
@@ -36,6 +39,7 @@ interface AppStore {
   // UI actions
   setSelectedBlock: (id: string | null) => void;
   setContextMenu: (menu: ContextMenuState | null) => void;
+  setDraggingBlock: (id: string | null) => void;
   openEditModal: (blockId: string) => void;
   closeModal: () => void;
   setSettingsOpen: (open: boolean) => void;
@@ -89,7 +93,7 @@ const SEED_BLOCKS: Block[] = [
 
 export const useAppStore = create<AppStore>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       // Persisted state
       members: SEED_MEMBERS,
       blocks: SEED_BLOCKS,
@@ -102,6 +106,7 @@ export const useAppStore = create<AppStore>()(
       isModalOpen: false,
       isSettingsOpen: false,
       editingBlockId: null,
+      draggingBlockId: null,
       renderStartDate: addDaysToISO(today, -14),
       renderEndDate: addDaysToISO(today, 90),
 
@@ -130,6 +135,36 @@ export const useAppStore = create<AppStore>()(
           m.id === id ? { ...m, name } : m
         ),
       })),
+
+      moveMemberUp: (id: string) => set(state => {
+        const sorted = [...state.members].sort((a, b) => a.order - b.order);
+        const idx = sorted.findIndex(m => m.id === id);
+        if (idx <= 0) return state;
+        const prev = sorted[idx - 1];
+        const curr = sorted[idx];
+        return {
+          members: state.members.map(m => {
+            if (m.id === curr.id) return { ...m, order: prev.order };
+            if (m.id === prev.id) return { ...m, order: curr.order };
+            return m;
+          }),
+        };
+      }),
+
+      moveMemberDown: (id: string) => set(state => {
+        const sorted = [...state.members].sort((a, b) => a.order - b.order);
+        const idx = sorted.findIndex(m => m.id === id);
+        if (idx < 0 || idx >= sorted.length - 1) return state;
+        const next = sorted[idx + 1];
+        const curr = sorted[idx];
+        return {
+          members: state.members.map(m => {
+            if (m.id === curr.id) return { ...m, order: next.order };
+            if (m.id === next.id) return { ...m, order: curr.order };
+            return m;
+          }),
+        };
+      }),
 
       // Block actions
       addBlock: (block: Omit<Block, 'id'>) => set(state => ({
@@ -176,6 +211,8 @@ export const useAppStore = create<AppStore>()(
       setSelectedBlock: (id: string | null) => set({ selectedBlockId: id }),
 
       setContextMenu: (menu: ContextMenuState | null) => set({ contextMenu: menu }),
+
+      setDraggingBlock: (id: string | null) => set({ draggingBlockId: id }),
 
       openEditModal: (blockId: string) => set({
         editingBlockId: blockId,

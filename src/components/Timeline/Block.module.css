@@ -7,7 +7,7 @@
   align-items: center;
   padding: 0 10px;
   user-select: none;
-  transition: box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease, top 0.15s ease;
   z-index: 1;
   touch-action: none;
 }

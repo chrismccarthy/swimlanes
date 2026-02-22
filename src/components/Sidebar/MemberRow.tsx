@@ -11,7 +11,15 @@ interface MemberRowProps {
 export function MemberRow({ member }: MemberRowProps) {
   const renameMember = useAppStore(s => s.renameMember);
   const removeMember = useAppStore(s => s.removeMember);
+  const moveMemberUp = useAppStore(s => s.moveMemberUp);
+  const moveMemberDown = useAppStore(s => s.moveMemberDown);
+  const members = useAppStore(s => s.members);
   const blocks = useAppStore(s => s.blocks);
+
+  const sortedMembers = [...members].sort((a, b) => a.order - b.order);
+  const memberIndex = sortedMembers.findIndex(m => m.id === member.id);
+  const isFirst = memberIndex === 0;
+  const isLast = memberIndex === sortedMembers.length - 1;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(member.name);
@@ -54,8 +62,14 @@ export function MemberRow({ member }: MemberRowProps) {
   }, [handleConfirm]);
 
   const handleDelete = useCallback(() => {
-    removeMember(member.id);
-  }, [member.id, removeMember]);
+    const blockCount = memberBlocks.length;
+    const msg = blockCount > 0
+      ? `Delete "${member.name}" and their ${blockCount} block${blockCount === 1 ? '' : 's'}?`
+      : `Delete "${member.name}"?`;
+    if (window.confirm(msg)) {
+      removeMember(member.id);
+    }
+  }, [member.id, member.name, memberBlocks.length, removeMember]);
 
   return (
     <div className={styles.memberRow} style={{ height: rowHeight }}>
@@ -73,6 +87,22 @@ export function MemberRow({ member }: MemberRowProps) {
           {member.name}
         </span>
       )}
+      <button
+        className={styles.reorderBtn}
+        onClick={() => moveMemberUp(member.id)}
+        disabled={isFirst}
+        title="Move up"
+      >
+        &#8593;
+      </button>
+      <button
+        className={styles.reorderBtn}
+        onClick={() => moveMemberDown(member.id)}
+        disabled={isLast}
+        title="Move down"
+      >
+        &#8595;
+      </button>
       <button
         className={styles.deleteBtn}
         onClick={handleDelete}

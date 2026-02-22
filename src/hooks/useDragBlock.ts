@@ -7,6 +7,7 @@ const DRAG_THRESHOLD = 3; // px before considering it a drag
 
 export function useDragBlock(blockId: string) {
   const updateBlock = useAppStore(s => s.updateBlock);
+  const setDraggingBlock = useAppStore(s => s.setDraggingBlock);
   const isDragging = useRef(false);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
@@ -34,6 +35,7 @@ export function useDragBlock(blockId: string) {
 
       if (!isDragging.current) {
         isDragging.current = true;
+        setDraggingBlock(blockId);
         // Now that we know it's a real drag, capture the pointer
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       }
@@ -48,6 +50,9 @@ export function useDragBlock(blockId: string) {
     const onPointerUp = () => {
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', onPointerUp);
+      if (isDragging.current) {
+        setDraggingBlock(null);
+      }
       isDragging.current = false;
     };
 

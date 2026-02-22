@@ -47,6 +47,10 @@ export function BlockModal() {
 
   if (!isModalOpen || !block) return null;
 
+  const hasDateError = startDate > endDate;
+  const hasTitleError = !title.trim();
+  const isValid = !hasDateError && !hasTitleError;
+
   return createPortal(
     <div className={styles.overlay} onClick={closeModal} onKeyDown={handleKeyDown}>
       <div className={styles.modal} onClick={e => e.stopPropagation()}>
@@ -56,7 +60,7 @@ export function BlockModal() {
           Title
           <input
             type="text"
-            className={styles.input}
+            className={`${styles.input} ${hasTitleError && title !== block.title ? styles.inputError : ''}`}
             value={title}
             onChange={e => setTitle(e.target.value)}
             autoFocus
@@ -68,7 +72,7 @@ export function BlockModal() {
             Start Date
             <input
               type="date"
-              className={styles.input}
+              className={`${styles.input} ${hasDateError ? styles.inputError : ''}`}
               value={startDate}
               onChange={e => setStartDate(e.target.value)}
             />
@@ -77,12 +81,15 @@ export function BlockModal() {
             End Date
             <input
               type="date"
-              className={styles.input}
+              className={`${styles.input} ${hasDateError ? styles.inputError : ''}`}
               value={endDate}
               onChange={e => setEndDate(e.target.value)}
             />
           </label>
         </div>
+        {hasDateError && (
+          <span className={styles.errorText}>End date must be on or after start date</span>
+        )}
 
         <label className={styles.label}>
           Color
@@ -93,7 +100,7 @@ export function BlockModal() {
           <button className={styles.cancelBtn} onClick={closeModal}>
             Cancel
           </button>
-          <button className={styles.saveBtn} onClick={handleSave}>
+          <button className={styles.saveBtn} onClick={handleSave} disabled={!isValid}>
             Save
           </button>
         </div>

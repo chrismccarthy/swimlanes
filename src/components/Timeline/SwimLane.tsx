@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
 import type { Block as BlockType, Member } from '../../types';
-import { assignTracks, computeRowHeight, DAY_WIDTH, xToDate } from '../../lib/layout';
+import { assignTracks, computeRowHeight, xToDate } from '../../lib/layout';
 import { addDaysToISO } from '../../lib/dates';
 import { useAppStore } from '../../store/useAppStore';
 import { Block } from './Block';
@@ -32,12 +32,12 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
     const relativeX = e.clientX - laneRect.left;
     const clickedDate = xToDate(relativeX, renderStartDate);
 
-    // Create a new 3-day block at the clicked date
+    // Create a new 3-day block centered on the clicked date
     const newBlock = {
       memberId: member.id,
       title: 'New Block',
-      startDate: clickedDate,
-      endDate: addDaysToISO(clickedDate, 2),
+      startDate: addDaysToISO(clickedDate, -1),
+      endDate: addDaysToISO(clickedDate, 1),
       color: 'blue' as const,
     };
 

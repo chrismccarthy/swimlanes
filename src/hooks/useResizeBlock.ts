@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { DAY_WIDTH } from '../lib/layout';
-import { addDaysToISO, daysBetween } from '../lib/dates';
+import { addDaysToISO } from '../lib/dates';
 
 export type ResizeSide = 'left' | 'right';
 

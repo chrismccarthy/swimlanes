@@ -55,7 +55,6 @@ export function getSprintLabel(
 ): string {
   const todayOffset = daysBetween(anchor, today);
   const todaySprintOffset = Math.floor(todayOffset / lengthDays);
-  const todaySprintStart = addDaysToISO(anchor, todaySprintOffset * lengthDays);
 
   const sprintStartOffset = daysBetween(anchor, sprintStartDate);
   const thisSprintOffset = Math.floor(sprintStartOffset / lengthDays);
