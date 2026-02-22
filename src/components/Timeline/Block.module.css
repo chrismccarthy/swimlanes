@@ -1,0 +1,39 @@
+.block {
+  position: absolute;
+  border-radius: 6px;
+  border: 1px solid;
+  cursor: grab;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  user-select: none;
+  transition: box-shadow 0.15s ease;
+  z-index: 1;
+  touch-action: none;
+}
+
+.block:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  z-index: 2;
+}
+
+.block:active {
+  cursor: grabbing;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.18);
+  z-index: 3;
+}
+
+.block.selected {
+  box-shadow: 0 0 0 2px #3b82f6;
+  z-index: 3;
+}
+
+.title {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  flex: 1;
+}

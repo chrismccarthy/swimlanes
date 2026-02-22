@@ -1,0 +1,5 @@
+.lane {
+  position: relative;
+  border-bottom: 1px solid #e2e8f0;
+  min-height: 56px;
+}

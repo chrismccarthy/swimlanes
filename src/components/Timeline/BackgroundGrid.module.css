@@ -1,0 +1,37 @@
+.grid {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.sprintBand {
+  position: absolute;
+  top: 0;
+}
+
+.sprintBand.even {
+  background: rgba(241, 245, 249, 0.4);
+}
+
+.weekendColumn {
+  position: absolute;
+  top: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    transparent,
+    transparent 3px,
+    rgba(148, 163, 184, 0.08) 3px,
+    rgba(148, 163, 184, 0.08) 6px
+  );
+  background-color: rgba(241, 245, 249, 0.6);
+}
+
+.dayLine {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  background: #f1f5f9;
+}

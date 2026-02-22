@@ -1,0 +1,15 @@
+.container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+  background: #fff;
+}
+
+.content {
+  min-height: 100%;
+  position: relative;
+}
+
+.body {
+  position: relative;
+}

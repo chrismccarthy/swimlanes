@@ -1,0 +1,40 @@
+.menu {
+  position: fixed;
+  z-index: 100;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 4px 0;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.item {
+  display: block;
+  width: 100%;
+  padding: 8px 16px;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  color: #1e293b;
+}
+
+.item:hover {
+  background: #f1f5f9;
+}
+
+.item.danger {
+  color: #dc2626;
+}
+
+.item.danger:hover {
+  background: #fef2f2;
+}
+
+.divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0;
+}
