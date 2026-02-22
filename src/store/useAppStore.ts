@@ -20,6 +20,7 @@ interface AppStore {
   editingBlockId: string | null;
   draggingBlockId: string | null;
   newBlockId: string | null;
+  draftBlock: Block | null;
   renderStartDate: string;
   renderEndDate: string;
   isOnline: boolean;
@@ -60,6 +61,7 @@ interface AppStore {
   setContextMenu: (menu: ContextMenuState | null) => void;
   setDraggingBlock: (id: string | null) => void;
   openEditModal: (blockId: string) => void;
+  openNewBlockModal: (block: Block) => void;
   closeModal: () => void;
   setSettingsOpen: (open: boolean) => void;
   expandTimelineBefore: (days: number) => void;
@@ -94,6 +96,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   editingBlockId: null,
   draggingBlockId: null,
   newBlockId: null,
+  draftBlock: null,
   renderStartDate: addDaysToISO(today, -14),
   renderEndDate: addDaysToISO(today, 90),
   isOnline: true,
@@ -245,17 +248,28 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   updateBlock: (id, patch) => {
+    // Don't fire Supabase during drag/resize — commitBlock handles that
+    // Still allow the optimistic update so the block moves visually
+    if (get().lockedBlockIds.has(id)) {
+      set(state => ({
+        blocks: state.blocks.map(b =>
+          b.id === id ? { ...b, ...patch } : b
+        ),
+      }));
+      return;
+    }
+
+    if (!get().isOnline) {
+      get().addToast('Cannot save while offline', 'error');
+      return;
+    }
+
     const prevBlocks = get().blocks;
     set(state => ({
       blocks: state.blocks.map(b =>
         b.id === id ? { ...b, ...patch } : b
       ),
     }));
-
-    // Don't fire Supabase during drag/resize — commitBlock handles that
-    if (get().lockedBlockIds.has(id)) return;
-
-    if (!get().isOnline) return;
 
     updateBlockFields(id, patch).catch(() => {
       set({ blocks: prevBlocks });
@@ -312,7 +326,10 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   },
 
   commitBlock: (id) => {
-    if (!get().isOnline) return;
+    if (!get().isOnline) {
+      get().addToast('Cannot save while offline', 'error');
+      return;
+    }
     const block = get().blocks.find(b => b.id === id);
     if (!block) return;
     updateBlockFields(id, {
@@ -353,10 +370,18 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     contextMenu: null,
   }),
 
+  openNewBlockModal: (block) => set({
+    draftBlock: block,
+    newBlockId: block.id,
+    editingBlockId: block.id,
+    isModalOpen: true,
+  }),
+
   closeModal: () => set({
     isModalOpen: false,
     editingBlockId: null,
     newBlockId: null,
+    draftBlock: null,
   }),
 
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),

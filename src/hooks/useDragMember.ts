@@ -95,15 +95,18 @@ export function useDragMember(memberId: string) {
       }
     };
 
-    const onPointerUp = () => {
+    const cleanup = () => {
       document.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('pointerup', onPointerUp);
-
-      // Clean up visual state
+      document.removeEventListener('pointercancel', cleanup);
       memberRow.style.opacity = '';
       handle.style.cursor = '';
       document.body.style.cursor = '';
-      indicator.remove();
+      if (indicator.parentNode) indicator.remove();
+    };
+
+    const onPointerUp = () => {
+      cleanup();
 
       if (!isDragging.current) {
         isDragging.current = false;
@@ -148,6 +151,7 @@ export function useDragMember(memberId: string) {
 
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', cleanup);
   }, [memberId]);
 
   return { onPointerDown, isDragging };

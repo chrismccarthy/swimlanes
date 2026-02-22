@@ -13,8 +13,7 @@ interface SwimLaneProps {
 }
 
 export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
-  const addBlock = useAppStore(s => s.addBlock);
-  const openEditModal = useAppStore(s => s.openEditModal);
+  const openNewBlockModal = useAppStore(s => s.openNewBlockModal);
 
   const { assignments, trackCount } = useMemo(
     () => assignTracks(blocks),
@@ -43,10 +42,8 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
       color: 'blue' as const,
     };
 
-    addBlock(newBlock);
-    useAppStore.setState({ newBlockId: id });
-    openEditModal(id);
-  }, [member.id, renderStartDate, addBlock, openEditModal]);
+    openNewBlockModal(newBlock);
+  }, [member.id, renderStartDate, openNewBlockModal]);
 
   return (
     <div

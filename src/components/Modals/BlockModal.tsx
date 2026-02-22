@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import type { BlockColor } from '../../types';
+import { daysBetween } from '../../lib/dates';
 import { ColorPicker } from './ColorPicker';
 import styles from './BlockModal.module.css';
 
@@ -9,12 +10,15 @@ export function BlockModal() {
   const isModalOpen = useAppStore(s => s.isModalOpen);
   const editingBlockId = useAppStore(s => s.editingBlockId);
   const newBlockId = useAppStore(s => s.newBlockId);
+  const draftBlock = useAppStore(s => s.draftBlock);
   const blocks = useAppStore(s => s.blocks);
+  const addBlock = useAppStore(s => s.addBlock);
   const updateBlock = useAppStore(s => s.updateBlock);
-  const deleteBlock = useAppStore(s => s.deleteBlock);
   const closeModal = useAppStore(s => s.closeModal);
 
-  const block = blocks.find(b => b.id === editingBlockId);
+  const block = editingBlockId === newBlockId && draftBlock
+    ? draftBlock
+    : blocks.find(b => b.id === editingBlockId);
 
   const [title, setTitle] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -31,25 +35,21 @@ export function BlockModal() {
   }, [block]);
 
   const handleCancel = useCallback(() => {
-    // If this was a freshly created block (via double-click) that was never saved,
-    // delete it so it doesn't orphan on the timeline
-    if (editingBlockId && editingBlockId === newBlockId) {
-      deleteBlock(editingBlockId);
-    }
+    // Draft block was never inserted into DB, so just close — no cleanup needed
     closeModal();
-  }, [editingBlockId, newBlockId, deleteBlock, closeModal]);
+  }, [closeModal]);
 
   const handleSave = useCallback(() => {
-    if (!editingBlockId || !title.trim()) return;
-    if (startDate > endDate) return;
-    updateBlock(editingBlockId, {
-      title: title.trim(),
-      startDate,
-      endDate,
-      color,
-    });
+    if (!editingBlockId || !block || !title.trim()) return;
+    if (daysBetween(startDate, endDate) < 0) return;
+    if (editingBlockId === newBlockId) {
+      // New block — insert into DB for the first time
+      addBlock({ ...block, title: title.trim(), startDate, endDate, color });
+    } else {
+      updateBlock(editingBlockId, { title: title.trim(), startDate, endDate, color });
+    }
     closeModal();
-  }, [editingBlockId, title, startDate, endDate, color, updateBlock, closeModal]);
+  }, [editingBlockId, newBlockId, block, title, startDate, endDate, color, addBlock, updateBlock, closeModal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') handleCancel();
@@ -58,7 +58,7 @@ export function BlockModal() {
 
   if (!isModalOpen || !block) return null;
 
-  const hasDateError = startDate > endDate;
+  const hasDateError = daysBetween(startDate, endDate) < 0;
   const hasTitleError = !title.trim();
   const isValid = !hasDateError && !hasTitleError;
 
