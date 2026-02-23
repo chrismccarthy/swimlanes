@@ -1,8 +1,9 @@
 import { useMemo, useCallback } from 'react';
 import type { Block as BlockType, Member } from '../../types';
-import { assignTracks, computeRowHeight, xToDate } from '../../lib/layout';
-import { addDaysToISO } from '../../lib/dates';
+import { assignTracks, computeRowHeight, dateToX, xToDate, BLOCK_HEIGHT, BLOCK_GAP, DAY_WIDTH } from '../../lib/layout';
+import { addDaysToISO, daysBetween } from '../../lib/dates';
 import { useAppStore } from '../../store/useAppStore';
+import { useDragCreateBlock } from '../../hooks/useDragCreateBlock';
 import { Block } from './Block';
 import styles from './SwimLane.module.css';
 
@@ -14,6 +15,7 @@ interface SwimLaneProps {
 
 export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
   const openNewBlockModal = useAppStore(s => s.openNewBlockModal);
+  const { onPointerDown: onDragCreatePointerDown, dragState } = useDragCreateBlock(member.id, renderStartDate);
 
   const { assignments, trackCount } = useMemo(
     () => assignTracks(blocks),
@@ -45,12 +47,23 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
     openNewBlockModal(newBlock);
   }, [member.id, renderStartDate, openNewBlockModal]);
 
+  // Compute preview rectangle position
+  const previewStyle = dragState.isCreating && dragState.previewStartDate && dragState.previewEndDate
+    ? {
+        left: dateToX(dragState.previewStartDate, renderStartDate),
+        width: (daysBetween(dragState.previewStartDate, dragState.previewEndDate) + 1) * DAY_WIDTH,
+        top: BLOCK_GAP + trackCount * (BLOCK_HEIGHT + BLOCK_GAP),
+        height: BLOCK_HEIGHT,
+      }
+    : null;
+
   return (
     <div
       className={styles.lane}
       style={{ height: rowHeight }}
       data-member-id={member.id}
       onDoubleClick={handleDoubleClick}
+      onPointerDown={onDragCreatePointerDown}
     >
       {assignments.map(({ block, trackIndex }) => (
         <Block
@@ -60,6 +73,9 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
           renderStartDate={renderStartDate}
         />
       ))}
+      {previewStyle && (
+        <div className={styles.previewBlock} style={previewStyle} />
+      )}
     </div>
   );
 }

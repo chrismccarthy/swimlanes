@@ -1,4 +1,3 @@
-import { useCallback } from 'react';
 import type { Block as BlockType } from '../../types';
 import { BLOCK_COLORS } from '../../lib/colors';
 import { dateToX, DAY_WIDTH, BLOCK_HEIGHT, blockTopOffset } from '../../lib/layout';
@@ -35,24 +34,24 @@ export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
   const { onPointerDown: onResizeLeftPointerDown } = useResizeBlock(block.id, 'left');
   const { onPointerDown: onResizeRightPointerDown } = useResizeBlock(block.id, 'right');
 
-  const handleClick = useCallback((e: React.MouseEvent) => {
+  const handleClick = (e: React.MouseEvent) => {
     // Don't fire click if we just finished dragging
     if (isDragging.current) return;
     e.stopPropagation();
     setSelectedBlock(block.id);
-  }, [block.id, setSelectedBlock, isDragging]);
+  };
 
-  const handleDoubleClick = useCallback((e: React.MouseEvent) => {
+  const handleDoubleClick = (e: React.MouseEvent) => {
     if (isDragging.current) return;
     e.stopPropagation();
     openEditModal(block.id);
-  }, [block.id, openEditModal, isDragging]);
+  };
 
-  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+  const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setContextMenu({ blockId: block.id, x: e.clientX, y: e.clientY });
-  }, [block.id, setContextMenu]);
+  };
 
   return (
     <div

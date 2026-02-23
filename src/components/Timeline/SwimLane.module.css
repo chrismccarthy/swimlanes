@@ -3,3 +3,14 @@
   border-bottom: 1px solid #e2e8f0;
   min-height: 56px;
 }
+
+.previewBlock {
+  position: absolute;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid #93C5FD;
+  background: #DBEAFE;
+  opacity: 0.6;
+  pointer-events: none;
+  z-index: 2;
+}

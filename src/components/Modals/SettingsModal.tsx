@@ -1,24 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import styles from './SettingsModal.module.css';
 
-export function SettingsModal() {
-  const isSettingsOpen = useAppStore(s => s.isSettingsOpen);
+function SettingsModalInner() {
   const sprintAnchorDate = useAppStore(s => s.sprintAnchorDate);
   const sprintLengthDays = useAppStore(s => s.sprintLengthDays);
   const updateSprintSettings = useAppStore(s => s.updateSprintSettings);
   const setSettingsOpen = useAppStore(s => s.setSettingsOpen);
 
-  const [anchor, setAnchor] = useState('');
-  const [length, setLength] = useState('');
-
-  useEffect(() => {
-    if (isSettingsOpen) {
-      setAnchor(sprintAnchorDate);
-      setLength(String(sprintLengthDays));
-    }
-  }, [isSettingsOpen, sprintAnchorDate, sprintLengthDays]);
+  // Remount via key resets these to current store values
+  const [anchor, setAnchor] = useState(sprintAnchorDate);
+  const [length, setLength] = useState(String(sprintLengthDays));
 
   const handleSave = useCallback(() => {
     const len = parseInt(length, 10);
@@ -35,8 +28,6 @@ export function SettingsModal() {
     if (e.key === 'Escape') handleClose();
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
   }, [handleClose, handleSave]);
-
-  if (!isSettingsOpen) return null;
 
   return createPortal(
     <div className={styles.overlay} onClick={handleClose} onKeyDown={handleKeyDown}>
@@ -79,4 +70,13 @@ export function SettingsModal() {
     </div>,
     document.body
   );
+}
+
+export function SettingsModal() {
+  const isSettingsOpen = useAppStore(s => s.isSettingsOpen);
+
+  if (!isSettingsOpen) return null;
+
+  // key forces remount when reopened, resetting useState to current store values
+  return <SettingsModalInner key={String(isSettingsOpen)} />;
 }

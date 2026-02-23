@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import type { BlockColor } from '../../types';
@@ -6,9 +6,7 @@ import { daysBetween } from '../../lib/dates';
 import { ColorPicker } from './ColorPicker';
 import styles from './BlockModal.module.css';
 
-export function BlockModal() {
-  const isModalOpen = useAppStore(s => s.isModalOpen);
-  const editingBlockId = useAppStore(s => s.editingBlockId);
+function BlockModalInner({ blockId }: { blockId: string }) {
   const newBlockId = useAppStore(s => s.newBlockId);
   const draftBlock = useAppStore(s => s.draftBlock);
   const blocks = useAppStore(s => s.blocks);
@@ -16,23 +14,15 @@ export function BlockModal() {
   const updateBlock = useAppStore(s => s.updateBlock);
   const closeModal = useAppStore(s => s.closeModal);
 
-  const block = editingBlockId === newBlockId && draftBlock
+  const block = blockId === newBlockId && draftBlock
     ? draftBlock
-    : blocks.find(b => b.id === editingBlockId);
+    : blocks.find(b => b.id === blockId);
 
-  const [title, setTitle] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [color, setColor] = useState<BlockColor>('blue');
-
-  useEffect(() => {
-    if (block) {
-      setTitle(block.title);
-      setStartDate(block.startDate);
-      setEndDate(block.endDate);
-      setColor(block.color);
-    }
-  }, [block]);
+  // Key-based remount (via parent) resets these to block values
+  const [title, setTitle] = useState(block?.title ?? '');
+  const [startDate, setStartDate] = useState(block?.startDate ?? '');
+  const [endDate, setEndDate] = useState(block?.endDate ?? '');
+  const [color, setColor] = useState<BlockColor>(block?.color ?? 'blue');
 
   const handleCancel = useCallback(() => {
     // Draft block was never inserted into DB, so just close — no cleanup needed
@@ -40,23 +30,23 @@ export function BlockModal() {
   }, [closeModal]);
 
   const handleSave = useCallback(() => {
-    if (!editingBlockId || !block || !title.trim()) return;
+    if (!blockId || !block || !title.trim()) return;
     if (daysBetween(startDate, endDate) < 0) return;
-    if (editingBlockId === newBlockId) {
+    if (blockId === newBlockId) {
       // New block — insert into DB for the first time
       addBlock({ ...block, title: title.trim(), startDate, endDate, color });
     } else {
-      updateBlock(editingBlockId, { title: title.trim(), startDate, endDate, color });
+      updateBlock(blockId, { title: title.trim(), startDate, endDate, color });
     }
     closeModal();
-  }, [editingBlockId, newBlockId, block, title, startDate, endDate, color, addBlock, updateBlock, closeModal]);
+  }, [blockId, newBlockId, block, title, startDate, endDate, color, addBlock, updateBlock, closeModal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') handleCancel();
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSave();
   }, [handleCancel, handleSave]);
 
-  if (!isModalOpen || !block) return null;
+  if (!block) return null;
 
   const hasDateError = daysBetween(startDate, endDate) < 0;
   const hasTitleError = !title.trim();
@@ -119,4 +109,14 @@ export function BlockModal() {
     </div>,
     document.body
   );
+}
+
+export function BlockModal() {
+  const isModalOpen = useAppStore(s => s.isModalOpen);
+  const editingBlockId = useAppStore(s => s.editingBlockId);
+
+  if (!isModalOpen || !editingBlockId) return null;
+
+  // key={editingBlockId} remounts BlockModalInner, resetting useState to fresh block values
+  return <BlockModalInner key={editingBlockId} blockId={editingBlockId} />;
 }
