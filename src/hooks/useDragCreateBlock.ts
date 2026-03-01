@@ -1,8 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { DAY_WIDTH, xToDate } from '../lib/layout';
-
-const DRAG_THRESHOLD = 3; // px before considering it a drag
+import { DAY_WIDTH, DRAG_THRESHOLD } from '../lib/layout';
+import { addDaysToISO } from '../lib/dates';
 
 interface DragCreateState {
   previewStartDate: string | null;
@@ -10,14 +9,13 @@ interface DragCreateState {
   isCreating: boolean;
 }
 
+const IDLE: DragCreateState = { previewStartDate: null, previewEndDate: null, isCreating: false };
+
 export function useDragCreateBlock(memberId: string, renderStartDate: string) {
   const openNewBlockModal = useAppStore(s => s.openNewBlockModal);
-  const [dragState, setDragState] = useState<DragCreateState>({
-    previewStartDate: null,
-    previewEndDate: null,
-    isCreating: false,
-  });
+  const [dragState, setDragState] = useState<DragCreateState>(IDLE);
   const isDragging = useRef(false);
+  const lastSnappedRef = useRef<{ start: number; end: number } | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     // Only left button, and only on empty lane background (not on blocks)
@@ -28,88 +26,72 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
     if (!useAppStore.getState().isOnline) return;
 
     const startX = e.clientX;
+    // Capture lane rect once — the lane doesn't move during a drag
     const laneRect = e.currentTarget.getBoundingClientRect();
     const relativeStartX = e.clientX - laneRect.left;
-    isDragging.current = false;
+    const snappedStartDays = Math.floor(relativeStartX / DAY_WIDTH);
 
-    // We need to capture the lane element for rect calculations during move
-    const laneEl = e.currentTarget;
+    isDragging.current = false;
+    lastSnappedRef.current = null;
+
+    const cleanup = () => {
+      document.removeEventListener('pointermove', onPointerMove);
+      document.removeEventListener('pointerup', onPointerUp);
+      document.removeEventListener('pointercancel', cleanup);
+      setDragState(IDLE);
+      isDragging.current = false;
+      lastSnappedRef.current = null;
+    };
 
     const onPointerMove = (moveEvent: PointerEvent) => {
-      const deltaX = moveEvent.clientX - startX;
-      const distance = Math.abs(deltaX);
-
+      const distance = Math.abs(moveEvent.clientX - startX);
       if (!isDragging.current && distance < DRAG_THRESHOLD) return;
+      isDragging.current = true;
 
-      if (!isDragging.current) {
-        isDragging.current = true;
-      }
-
-      // Calculate current relative X within the lane
-      const currentLaneRect = laneEl.getBoundingClientRect();
-      const relativeCurrentX = moveEvent.clientX - currentLaneRect.left;
-
-      // Snap both positions to day boundaries
-      const snappedStartDays = Math.floor(relativeStartX / DAY_WIDTH);
+      const relativeCurrentX = moveEvent.clientX - laneRect.left;
       const snappedCurrentDays = Math.floor(relativeCurrentX / DAY_WIDTH);
 
-      // Handle reverse drag: ensure start <= end
+      // Only re-render when the snapped day boundary actually changes
+      const last = lastSnappedRef.current;
+      if (last && last.start === snappedStartDays && last.end === snappedCurrentDays) return;
+      lastSnappedRef.current = { start: snappedStartDays, end: snappedCurrentDays };
+
       const minDays = Math.min(snappedStartDays, snappedCurrentDays);
       const maxDays = Math.max(snappedStartDays, snappedCurrentDays);
 
-      const startDate = xToDate(minDays * DAY_WIDTH, renderStartDate);
-      const endDate = xToDate(maxDays * DAY_WIDTH, renderStartDate);
-
       setDragState({
-        previewStartDate: startDate,
-        previewEndDate: endDate,
+        previewStartDate: addDaysToISO(renderStartDate, minDays),
+        previewEndDate: addDaysToISO(renderStartDate, maxDays),
         isCreating: true,
       });
     };
 
     const onPointerUp = (upEvent: PointerEvent) => {
-      document.removeEventListener('pointermove', onPointerMove);
-      document.removeEventListener('pointerup', onPointerUp);
+      const wasDragging = isDragging.current;
+      cleanup();
 
-      if (!isDragging.current) {
-        // No drag occurred (< 3px movement) — do nothing, let dblclick handle it
-        setDragState({ previewStartDate: null, previewEndDate: null, isCreating: false });
-        return;
-      }
-
-      // Calculate final dates
-      const currentLaneRect = laneEl.getBoundingClientRect();
-      const relativeUpX = upEvent.clientX - currentLaneRect.left;
-
-      const snappedStartDays = Math.floor(relativeStartX / DAY_WIDTH);
-      const snappedUpDays = Math.floor(relativeUpX / DAY_WIDTH);
+      if (!wasDragging) return;
 
       const totalDelta = Math.abs(upEvent.clientX - startX);
-
       let startDate: string;
       let endDate: string;
 
       if (totalDelta < DAY_WIDTH) {
-        // Short drag (>= 3px but < 1 day width) — create 1-day block
-        const clickedDate = xToDate(snappedStartDays * DAY_WIDTH, renderStartDate);
-        startDate = clickedDate;
-        endDate = clickedDate;
+        // Short drag (>= 3px but < 1 day width) — create 1-day block at drag origin
+        startDate = addDaysToISO(renderStartDate, snappedStartDays);
+        endDate = startDate;
       } else {
         // Full drag — multi-day block with snapped dates
+        const relativeUpX = upEvent.clientX - laneRect.left;
+        const snappedUpDays = Math.floor(relativeUpX / DAY_WIDTH);
         const minDays = Math.min(snappedStartDays, snappedUpDays);
         const maxDays = Math.max(snappedStartDays, snappedUpDays);
-        startDate = xToDate(minDays * DAY_WIDTH, renderStartDate);
-        endDate = xToDate(maxDays * DAY_WIDTH, renderStartDate);
+        startDate = addDaysToISO(renderStartDate, minDays);
+        endDate = addDaysToISO(renderStartDate, maxDays);
       }
 
-      // Clear preview
-      setDragState({ previewStartDate: null, previewEndDate: null, isCreating: false });
-      isDragging.current = false;
-
-      // Create block and open modal
-      const id = crypto.randomUUID();
       openNewBlockModal({
-        id,
+        id: crypto.randomUUID(),
         memberId,
         title: 'New Block',
         startDate,
@@ -120,6 +102,7 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
 
     document.addEventListener('pointermove', onPointerMove);
     document.addEventListener('pointerup', onPointerUp);
+    document.addEventListener('pointercancel', cleanup);
   }, [memberId, renderStartDate, openNewBlockModal]);
 
   return { onPointerDown, dragState };

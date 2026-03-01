@@ -2,6 +2,7 @@ import { daysBetween, addDaysToISO } from './dates';
 import type { Block, TrackAssignment } from '../types';
 
 export const DAY_WIDTH = 40;
+export const DRAG_THRESHOLD = 3; // px of movement before a drag is recognised
 export const MIN_ROW_HEIGHT = 56;
 export const BLOCK_HEIGHT = 40;
 export const BLOCK_GAP = 8;

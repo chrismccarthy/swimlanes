@@ -1,7 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
-
-const DRAG_THRESHOLD = 3;
+import { DRAG_THRESHOLD } from '../lib/layout';
 
 export function useDragMember(memberId: string) {
   const isDragging = useRef(false);
