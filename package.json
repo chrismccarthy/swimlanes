@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:artifact": "tsc -b && vite build --config vite.artifact.config.ts && node scripts/build-artifact.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },
