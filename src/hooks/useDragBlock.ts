@@ -1,9 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { DAY_WIDTH } from '../lib/layout';
+import { DAY_WIDTH, DRAG_THRESHOLD } from '../lib/layout';
 import { addDaysToISO } from '../lib/dates';
-
-const DRAG_THRESHOLD = 3; // px before considering it a drag
 
 export function useDragBlock(blockId: string) {
   const updateBlock = useAppStore(s => s.updateBlock);
