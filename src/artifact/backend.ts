@@ -7,6 +7,7 @@
  * opened inside claude.ai, and falls back to localStorage anywhere else.
  */
 import type { Block, BlockColor, Member, SprintConfig } from '../types';
+import { ConflictError } from '../lib/supabase/errors';
 
 export type Change =
   | { kind: 'member'; type: 'upsert'; member: Member }
@@ -17,24 +18,38 @@ export type Change =
 
 export type ChangeListener = (change: Change) => void;
 
+export type MemberPatch = Partial<Omit<Member, 'id' | 'updatedAt'>>;
+export type BlockPatch = Partial<Omit<Block, 'id' | 'updatedAt'>>;
+
 export interface Backend {
   fetchMembers(): Promise<Member[]>;
   fetchBlocks(): Promise<Block[]>;
+  fetchMember(id: string): Promise<Member | null>;
+  fetchBlock(id: string): Promise<Block | null>;
   fetchSprintConfig(): Promise<SprintConfig>;
-  insertMember(member: Member): Promise<void>;
-  updateMember(id: string, patch: Partial<Omit<Member, 'id'>>): Promise<void>;
+  /** All writers return the new `updatedAt` they stamped on the document. */
+  insertMember(member: Omit<Member, 'updatedAt'>): Promise<string>;
+  updateMember(id: string, patch: MemberPatch, expectedUpdatedAt: string): Promise<string>;
   deleteMember(id: string): Promise<void>;
-  insertBlock(block: Block): Promise<void>;
-  updateBlock(id: string, patch: Partial<Omit<Block, 'id'>>): Promise<void>;
+  insertBlock(block: Block): Promise<string>;
+  updateBlock(id: string, patch: BlockPatch, expectedUpdatedAt: string): Promise<string>;
   deleteBlock(id: string): Promise<void>;
-  setSprintConfig(config: SprintConfig): Promise<void>;
+  setSprintConfig(config: Omit<SprintConfig, 'updatedAt'>, expectedUpdatedAt: string): Promise<string>;
   subscribe(listener: ChangeListener): () => void;
 }
+
+/** Version token a never-written sprint config starts from. */
+const SPRINT_EPOCH = new Date(0).toISOString();
 
 export const DEFAULT_SPRINT_CONFIG: SprintConfig = {
   anchorDate: '2026-02-12',
   lengthDays: 14,
+  updatedAt: SPRINT_EPOCH,
 };
+
+function now(): string {
+  return new Date().toISOString();
+}
 
 // --- Minimal subset of the artifact `db` capability surface we use ---
 
@@ -98,7 +113,12 @@ function color(v: unknown): BlockColor {
 }
 
 function memberFromDoc(id: string, d: DocData): Member {
-  return { id, name: str(d.name), sortOrder: num(d.sortOrder, 0) };
+  return {
+    id,
+    name: str(d.name),
+    sortOrder: num(d.sortOrder, 0),
+    updatedAt: str(d.updatedAt, SPRINT_EPOCH),
+  };
 }
 
 function blockFromDoc(id: string, d: DocData): Block {
@@ -109,6 +129,7 @@ function blockFromDoc(id: string, d: DocData): Block {
     startDate: str(d.startDate),
     endDate: str(d.endDate),
     color: color(d.color),
+    updatedAt: str(d.updatedAt, SPRINT_EPOCH),
   };
 }
 
@@ -117,6 +138,7 @@ function sprintFromDoc(d: DocData | undefined): SprintConfig {
   return {
     anchorDate: str(d.anchorDate, DEFAULT_SPRINT_CONFIG.anchorDate),
     lengthDays: num(d.lengthDays, DEFAULT_SPRINT_CONFIG.lengthDays),
+    updatedAt: str(d.updatedAt, DEFAULT_SPRINT_CONFIG.updatedAt),
   };
 }
 
@@ -144,38 +166,75 @@ function createDbBackend(db: Db): Backend {
       const snap = await blocks.get();
       return snap.docs.filter(d => d.exists).map(d => blockFromDoc(d.id, d.data()!));
     },
+    async fetchMember(id) {
+      const snap = await members.doc(id).get();
+      return snap.exists ? memberFromDoc(snap.id, snap.data() ?? {}) : null;
+    },
+    async fetchBlock(id) {
+      const snap = await blocks.doc(id).get();
+      return snap.exists ? blockFromDoc(snap.id, snap.data() ?? {}) : null;
+    },
     async fetchSprintConfig() {
       const snap = await sprint.get();
       return sprintFromDoc(snap.exists ? snap.data() : undefined);
     },
-    insertMember(m) {
-      return members.doc(m.id).set({ name: m.name, sortOrder: m.sortOrder });
+    async insertMember(m) {
+      const updatedAt = now();
+      await members.doc(m.id).set({ name: m.name, sortOrder: m.sortOrder, updatedAt });
+      return updatedAt;
     },
-    updateMember(id, patch) {
-      return members.doc(id).update(stripUndefined(patch));
+    async updateMember(id, patch, expectedUpdatedAt) {
+      // Read-then-write version check. A concurrent writer could slip between
+      // the two calls; that window is acceptable for this backend, and the
+      // common case (another tab that already wrote) is caught.
+      const snap = await members.doc(id).get();
+      if (!snap.exists) throw new ConflictError('member', id);
+      const current = memberFromDoc(snap.id, snap.data() ?? {});
+      if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('member', id);
+      const updatedAt = now();
+      await members.doc(id).update({ ...stripUndefined(patch), updatedAt });
+      return updatedAt;
     },
     async deleteMember(id) {
       await members.doc(id).delete();
       const owned = await blocks.where('memberId', '==', id).get();
       await Promise.all(owned.docs.map(d => blocks.doc(d.id).delete()));
     },
-    insertBlock(b) {
-      return blocks.doc(b.id).set({
+    async insertBlock(b) {
+      const updatedAt = now();
+      await blocks.doc(b.id).set({
         memberId: b.memberId,
         title: b.title,
         startDate: b.startDate,
         endDate: b.endDate,
         color: b.color,
+        updatedAt,
       });
+      return updatedAt;
     },
-    updateBlock(id, patch) {
-      return blocks.doc(id).update(stripUndefined(patch));
+    async updateBlock(id, patch, expectedUpdatedAt) {
+      const snap = await blocks.doc(id).get();
+      if (!snap.exists) throw new ConflictError('block', id);
+      const current = blockFromDoc(snap.id, snap.data() ?? {});
+      if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('block', id);
+      const updatedAt = now();
+      await blocks.doc(id).update({ ...stripUndefined(patch), updatedAt });
+      return updatedAt;
     },
     deleteBlock(id) {
       return blocks.doc(id).delete();
     },
-    setSprintConfig(config) {
-      return sprint.set({ anchorDate: config.anchorDate, lengthDays: config.lengthDays });
+    async setSprintConfig(config, expectedUpdatedAt) {
+      const snap = await sprint.get();
+      const current = sprintFromDoc(snap.exists ? snap.data() : undefined);
+      if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('sprint settings');
+      const updatedAt = now();
+      await sprint.set({
+        anchorDate: config.anchorDate,
+        lengthDays: config.lengthDays,
+        updatedAt,
+      });
+      return updatedAt;
     },
     subscribe(listener) {
       const onError = (e: unknown) => console.warn('Swimlanes: realtime subscription ended', e);
@@ -216,10 +275,14 @@ function readLocal(): LocalData {
     const raw = localStorage.getItem(LOCAL_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<LocalData>;
+      // Data written before optimistic concurrency existed has no updatedAt;
+      // give it the epoch token so the first write still version-checks.
+      const withToken = <T extends { updatedAt: string }>(v: T): T =>
+        typeof v.updatedAt === 'string' ? v : { ...v, updatedAt: SPRINT_EPOCH };
       return {
-        members: Array.isArray(parsed.members) ? parsed.members : [],
-        blocks: Array.isArray(parsed.blocks) ? parsed.blocks : [],
-        sprint: parsed.sprint ?? DEFAULT_SPRINT_CONFIG,
+        members: Array.isArray(parsed.members) ? parsed.members.map(withToken) : [],
+        blocks: Array.isArray(parsed.blocks) ? parsed.blocks.map(withToken) : [],
+        sprint: parsed.sprint ? withToken(parsed.sprint) : DEFAULT_SPRINT_CONFIG,
       };
     }
   } catch {
@@ -239,29 +302,67 @@ function writeLocal(data: LocalData) {
 function createLocalBackend(): Backend {
   let data = readLocal();
   const mutate = (fn: (d: LocalData) => void) => {
+    // Another tab in this browser may have written since we last looked, so
+    // re-read before mutating; otherwise we would clobber its changes wholesale.
+    data = readLocal();
     fn(data);
     writeLocal(data);
     return Promise.resolve();
   };
+  const mutateStamped = async (fn: (d: LocalData, updatedAt: string) => void) => {
+    const updatedAt = now();
+    await mutate(d => fn(d, updatedAt));
+    return updatedAt;
+  };
 
   return {
-    fetchMembers: () => Promise.resolve([...data.members].sort((a, b) => a.sortOrder - b.sortOrder)),
-    fetchBlocks: () => Promise.resolve([...data.blocks]),
-    fetchSprintConfig: () => Promise.resolve(data.sprint),
-    insertMember: m => mutate(d => { d.members.push(m); }),
-    updateMember: (id, patch) => mutate(d => {
-      d.members = d.members.map(m => (m.id === id ? { ...m, ...stripUndefined(patch) } : m));
+    fetchMembers: () => {
+      data = readLocal();
+      return Promise.resolve([...data.members].sort((a, b) => a.sortOrder - b.sortOrder));
+    },
+    fetchBlocks: () => {
+      data = readLocal();
+      return Promise.resolve([...data.blocks]);
+    },
+    fetchMember: id => {
+      data = readLocal();
+      return Promise.resolve(data.members.find(m => m.id === id) ?? null);
+    },
+    fetchBlock: id => {
+      data = readLocal();
+      return Promise.resolve(data.blocks.find(b => b.id === id) ?? null);
+    },
+    fetchSprintConfig: () => {
+      data = readLocal();
+      return Promise.resolve(data.sprint);
+    },
+    insertMember: m => mutateStamped((d, updatedAt) => { d.members.push({ ...m, updatedAt }); }),
+    updateMember: (id, patch, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
+      const current = d.members.find(m => m.id === id);
+      if (!current || current.updatedAt !== expectedUpdatedAt) {
+        throw new ConflictError('member', id);
+      }
+      d.members = d.members.map(m =>
+        m.id === id ? { ...m, ...stripUndefined(patch), updatedAt } : m);
     }),
     deleteMember: id => mutate(d => {
       d.members = d.members.filter(m => m.id !== id);
       d.blocks = d.blocks.filter(b => b.memberId !== id);
     }),
-    insertBlock: b => mutate(d => { d.blocks.push(b); }),
-    updateBlock: (id, patch) => mutate(d => {
-      d.blocks = d.blocks.map(b => (b.id === id ? { ...b, ...stripUndefined(patch) } : b));
+    insertBlock: b => mutateStamped((d, updatedAt) => { d.blocks.push({ ...b, updatedAt }); }),
+    updateBlock: (id, patch, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
+      const current = d.blocks.find(b => b.id === id);
+      if (!current || current.updatedAt !== expectedUpdatedAt) {
+        throw new ConflictError('block', id);
+      }
+      d.blocks = d.blocks.map(b =>
+        b.id === id ? { ...b, ...stripUndefined(patch), updatedAt } : b);
     }),
     deleteBlock: id => mutate(d => { d.blocks = d.blocks.filter(b => b.id !== id); }),
-    setSprintConfig: config => mutate(d => { d.sprint = config; }),
+    setSprintConfig: (config, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
+      if (d.sprint.updatedAt !== expectedUpdatedAt) throw new ConflictError('sprint settings');
+      d.sprint = { ...config, updatedAt };
+    }),
     subscribe(listener) {
       // Cross-tab sync in the same browser: reload and diff on storage events.
       const onStorage = (e: StorageEvent) => {

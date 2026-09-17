@@ -9,11 +9,61 @@
 
 .header {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 10px;
   border-bottom: 1px solid #e2e8f0;
   flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.headerTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zoomControl {
+  display: flex;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.zoomBtn {
+  flex: 1;
+  padding: 2px 0;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  background: none;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.zoomBtn:first-child {
+  border-left: none;
+}
+
+.zoomBtn:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.zoomBtn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.zoomBtnActive,
+.zoomBtnActive:hover {
+  background: #3b82f6;
+  color: #fff;
 }
 
 .title {

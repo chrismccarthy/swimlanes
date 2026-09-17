@@ -6,20 +6,34 @@ export async function fetchMembers(): Promise<Member[]> {
   return (await getBackend()).fetchMembers();
 }
 
+export async function fetchMember(id: string): Promise<Member | null> {
+  return (await getBackend()).fetchMember(id);
+}
+
 export async function insertMember(
   member: { id: string; name: string; sortOrder: number },
   userId: string,
-) {
+): Promise<string> {
   void userId; // access is per-artifact, not per-user, in this build
-  await (await getBackend()).insertMember(member);
+  return (await getBackend()).insertMember(member);
 }
 
-export async function updateMemberName(id: string, name: string) {
-  await (await getBackend()).updateMember(id, { name });
+/** @throws ConflictError when the row no longer carries `expectedUpdatedAt`. */
+export async function updateMemberName(
+  id: string,
+  name: string,
+  expectedUpdatedAt: string,
+): Promise<string> {
+  return (await getBackend()).updateMember(id, { name }, expectedUpdatedAt);
 }
 
-export async function updateMemberSortOrder(id: string, sortOrder: number) {
-  await (await getBackend()).updateMember(id, { sortOrder });
+/** @throws ConflictError when the row no longer carries `expectedUpdatedAt`. */
+export async function updateMemberSortOrder(
+  id: string,
+  sortOrder: number,
+  expectedUpdatedAt: string,
+): Promise<string> {
+  return (await getBackend()).updateMember(id, { sortOrder }, expectedUpdatedAt);
 }
 
 export async function deleteMember(id: string) {

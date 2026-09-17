@@ -1,9 +1,11 @@
 import { create } from 'zustand';
-import type { Block, Member, ContextMenuState, SprintConfig, Toast } from '../types';
+import type { Block, Member, ContextMenuState, SprintConfig, Toast, ZoomLevel } from '../types';
 import { isoToday, addDaysToISO } from '../lib/dates';
-import { insertMember, updateMemberName, updateMemberSortOrder, deleteMember as deleteMemberDb } from '../lib/supabase/members';
-import { insertBlock, updateBlockFields, deleteBlockById } from '../lib/supabase/blocks';
-import { updateSprintConfigFields } from '../lib/supabase/sprintConfig';
+import { ZOOM_DAY_WIDTH } from '../lib/layout';
+import { fetchMember, insertMember, updateMemberName, updateMemberSortOrder, deleteMember as deleteMemberDb } from '../lib/supabase/members';
+import { fetchBlock, insertBlock, updateBlockFields, deleteBlockById } from '../lib/supabase/blocks';
+import { fetchSprintConfig, updateSprintConfigFields } from '../lib/supabase/sprintConfig';
+import { isConflictError } from '../lib/supabase/errors';
 
 interface AppStore {
   // Data state (populated from Supabase)
@@ -11,6 +13,8 @@ interface AppStore {
   blocks: Block[];
   sprintAnchorDate: string;
   sprintLengthDays: number;
+  /** Version token for the sprint_config row (see Block.updatedAt). */
+  sprintUpdatedAt: string;
 
   // UI state
   selectedBlockId: string | null;
@@ -27,6 +31,9 @@ interface AppStore {
   toasts: Toast[];
   lockedBlockIds: Set<string>;
   userId: string | null;
+  zoom: ZoomLevel;
+  /** Derived from `zoom` — kept in sync by `setZoom` so components can select it directly */
+  dayWidth: number;
 
   // Bulk setters (for initial load + realtime)
   setMembers: (members: Member[]) => void;
@@ -48,7 +55,7 @@ interface AppStore {
 
   // Block actions (optimistic + Supabase)
   addBlock: (block: Block) => void;
-  updateBlock: (id: string, patch: Partial<Omit<Block, 'id'>>) => void;
+  updateBlock: (id: string, patch: Partial<Omit<Block, 'id' | 'updatedAt'>>) => void;
   deleteBlock: (id: string) => void;
   duplicateBlock: (id: string) => void;
   commitBlock: (id: string) => void;
@@ -66,6 +73,7 @@ interface AppStore {
   setSettingsOpen: (open: boolean) => void;
   expandTimelineBefore: (days: number) => void;
   expandTimelineAfter: (days: number) => void;
+  setZoom: (zoom: ZoomLevel) => void;
 
   // Online/offline
   setOnline: (online: boolean) => void;
@@ -81,12 +89,91 @@ interface AppStore {
 
 const today = isoToday();
 
+// --- Conflict handling ---------------------------------------------------
+//
+// Every write is conditional on the `updatedAt` the client last saw. When the
+// server rejects one, rolling back to our stale copy would hide the other
+// person's edit, so instead we re-read the row, show their version, and say so.
+
+export const CONFLICT_BLOCK_MESSAGE = 'Someone else changed this block; showing their version';
+export const CONFLICT_MEMBER_MESSAGE = 'Someone else changed this member; showing their version';
+export const CONFLICT_SPRINT_MESSAGE = 'Someone else changed the sprint settings; showing their version';
+
+/** Re-read a block after a rejected write and merge the server's version in. */
+async function resolveBlockConflict(id: string) {
+  try {
+    const fresh = await fetchBlock(id);
+    const store = useAppStore.getState();
+    if (!fresh) {
+      store.removeRemoteBlock(id);
+    } else if (!store.lockedBlockIds.has(id)) {
+      // A locked block is mid-drag; don't yank it out from under the pointer.
+      store.mergeRemoteBlock(fresh);
+    }
+  } catch {
+    // Refetch failed (offline, RLS, ...) — keep what we have; the toast warns.
+  }
+  useAppStore.getState().addToast(CONFLICT_BLOCK_MESSAGE, 'error');
+}
+
+/** Re-read a member after a rejected write and merge the server's version in. */
+async function resolveMemberConflict(id: string) {
+  try {
+    const fresh = await fetchMember(id);
+    const store = useAppStore.getState();
+    if (fresh) store.mergeRemoteMember(fresh);
+    else store.removeRemoteMember(id);
+  } catch {
+    // Keep what we have; the toast warns.
+  }
+  useAppStore.getState().addToast(CONFLICT_MEMBER_MESSAGE, 'error');
+}
+
+/** Re-read the sprint config after a rejected write. */
+async function resolveSprintConflict() {
+  try {
+    const fresh = await fetchSprintConfig();
+    useAppStore.getState().setSprintConfig(fresh);
+  } catch {
+    // Keep what we have; the toast warns.
+  }
+  useAppStore.getState().addToast(CONFLICT_SPRINT_MESSAGE, 'error');
+}
+
+const ZOOM_STORAGE_KEY = 'swimlanes.zoom';
+
+function isZoomLevel(value: unknown): value is ZoomLevel {
+  return value === 'day' || value === 'week' || value === 'quarter';
+}
+
+/** Read the persisted zoom level; falls back to 'day' when storage is unavailable */
+function loadZoom(): ZoomLevel {
+  try {
+    const raw = localStorage.getItem(ZOOM_STORAGE_KEY);
+    if (isZoomLevel(raw)) return raw;
+  } catch {
+    // localStorage can throw in private mode / sandboxed frames — ignore
+  }
+  return 'day';
+}
+
+function saveZoom(zoom: ZoomLevel): void {
+  try {
+    localStorage.setItem(ZOOM_STORAGE_KEY, zoom);
+  } catch {
+    // Persistence is best-effort
+  }
+}
+
+const initialZoom = loadZoom();
+
 export const useAppStore = create<AppStore>()((set, get) => ({
   // Data state — empty until DataLoader populates
   members: [],
   blocks: [],
   sprintAnchorDate: '2026-02-12',
   sprintLengthDays: 14,
+  sprintUpdatedAt: '',
 
   // UI state
   selectedBlockId: null,
@@ -103,6 +190,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   toasts: [],
   lockedBlockIds: new Set<string>(),
   userId: null,
+  zoom: initialZoom,
+  dayWidth: ZOOM_DAY_WIDTH[initialZoom],
 
   // Bulk setters
   setMembers: (members) => set({ members }),
@@ -110,6 +199,7 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   setSprintConfig: (config) => set({
     sprintAnchorDate: config.anchorDate,
     sprintLengthDays: config.lengthDays,
+    sprintUpdatedAt: config.updatedAt,
   }),
   setUserId: (id) => set({ userId: id }),
 
@@ -159,12 +249,18 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       id: crypto.randomUUID(),
       name,
       sortOrder: maxSort + 1,
+      // Provisional until the insert comes back with the server's value.
+      updatedAt: new Date().toISOString(),
     };
     set({ members: [...state.members, newMember] });
 
     const userId = state.userId;
     if (userId) {
-      insertMember(newMember, userId).catch(() => {
+      insertMember(newMember, userId).then(updatedAt => {
+        set(s => ({
+          members: s.members.map(m => (m.id === newMember.id ? { ...m, updatedAt } : m)),
+        }));
+      }).catch(() => {
         set({ members: get().members.filter(m => m.id !== newMember.id) });
         get().addToast('Failed to add member', 'error');
       });
@@ -195,13 +291,23 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       return;
     }
     const prevMembers = get().members;
+    const expectedUpdatedAt = prevMembers.find(m => m.id === id)?.updatedAt;
+    if (expectedUpdatedAt === undefined) return;
     set(state => ({
       members: state.members.map(m =>
         m.id === id ? { ...m, name } : m
       ),
     }));
 
-    updateMemberName(id, name).catch(() => {
+    updateMemberName(id, name, expectedUpdatedAt).then(updatedAt => {
+      set(state => ({
+        members: state.members.map(m => (m.id === id ? { ...m, updatedAt } : m)),
+      }));
+    }).catch(error => {
+      if (isConflictError(error)) {
+        void resolveMemberConflict(id);
+        return;
+      }
       set({ members: prevMembers });
       get().addToast('Failed to rename member', 'error');
     });
@@ -213,13 +319,23 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       return;
     }
     const prevMembers = get().members;
+    const expectedUpdatedAt = prevMembers.find(m => m.id === id)?.updatedAt;
+    if (expectedUpdatedAt === undefined) return;
     set(state => ({
       members: state.members.map(m =>
         m.id === id ? { ...m, sortOrder: newSortOrder } : m
       ),
     }));
 
-    updateMemberSortOrder(id, newSortOrder).catch(() => {
+    updateMemberSortOrder(id, newSortOrder, expectedUpdatedAt).then(updatedAt => {
+      set(state => ({
+        members: state.members.map(m => (m.id === id ? { ...m, updatedAt } : m)),
+      }));
+    }).catch(error => {
+      if (isConflictError(error)) {
+        void resolveMemberConflict(id);
+        return;
+      }
       set({ members: prevMembers });
       get().addToast('Failed to reorder member', 'error');
     });
@@ -238,7 +354,11 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
     const userId = get().userId;
     if (userId) {
-      insertBlock(block, userId).catch(() => {
+      insertBlock(block, userId).then(updatedAt => {
+        set(state => ({
+          blocks: state.blocks.map(b => (b.id === block.id ? { ...b, updatedAt } : b)),
+        }));
+      }).catch(() => {
         set(state => ({
           blocks: state.blocks.filter(b => b.id !== block.id),
         }));
@@ -249,7 +369,9 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
   updateBlock: (id, patch) => {
     // Don't fire Supabase during drag/resize — commitBlock handles that
-    // Still allow the optimistic update so the block moves visually
+    // Still allow the optimistic update so the block moves visually.
+    // `updatedAt` is deliberately left alone: commitBlock at drag end must
+    // send the version the block had before the drag started.
     if (get().lockedBlockIds.has(id)) {
       set(state => ({
         blocks: state.blocks.map(b =>
@@ -265,13 +387,23 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
 
     const prevBlocks = get().blocks;
+    const expectedUpdatedAt = prevBlocks.find(b => b.id === id)?.updatedAt;
+    if (expectedUpdatedAt === undefined) return;
     set(state => ({
       blocks: state.blocks.map(b =>
         b.id === id ? { ...b, ...patch } : b
       ),
     }));
 
-    updateBlockFields(id, patch).catch(() => {
+    updateBlockFields(id, patch, expectedUpdatedAt).then(updatedAt => {
+      set(state => ({
+        blocks: state.blocks.map(b => (b.id === id ? { ...b, updatedAt } : b)),
+      }));
+    }).catch(error => {
+      if (isConflictError(error)) {
+        void resolveBlockConflict(id);
+        return;
+      }
       set({ blocks: prevBlocks });
       get().addToast('Failed to save block changes', 'error');
     });
@@ -289,6 +421,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       contextMenu: null,
     }));
 
+    // Deletes are unconditional: removing a block someone else just edited is
+    // fine, and deleting an already-deleted row resolves without a toast.
     deleteBlockById(id).catch(() => {
       set({ blocks: prevBlocks });
       get().addToast('Failed to delete block', 'error');
@@ -308,6 +442,8 @@ export const useAppStore = create<AppStore>()((set, get) => ({
       title: `${original.title} (copy)`,
       startDate: addDaysToISO(original.startDate, 1),
       endDate: addDaysToISO(original.endDate, 1),
+      // Provisional until the insert comes back with the server's value.
+      updatedAt: new Date().toISOString(),
     };
     set(state => ({
       blocks: [...state.blocks, newBlock],
@@ -316,7 +452,11 @@ export const useAppStore = create<AppStore>()((set, get) => ({
 
     const userId = get().userId;
     if (userId) {
-      insertBlock(newBlock, userId).catch(() => {
+      insertBlock(newBlock, userId).then(updatedAt => {
+        set(state => ({
+          blocks: state.blocks.map(b => (b.id === newBlock.id ? { ...b, updatedAt } : b)),
+        }));
+      }).catch(() => {
         set(state => ({
           blocks: state.blocks.filter(b => b.id !== newBlock.id),
         }));
@@ -332,10 +472,20 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
     const block = get().blocks.find(b => b.id === id);
     if (!block) return;
+    // `block.updatedAt` is the version from before the drag: optimistic moves
+    // while locked never touch it, and realtime skips locked blocks.
     updateBlockFields(id, {
       startDate: block.startDate,
       endDate: block.endDate,
-    }).catch(() => {
+    }, block.updatedAt).then(updatedAt => {
+      set(state => ({
+        blocks: state.blocks.map(b => (b.id === id ? { ...b, updatedAt } : b)),
+      }));
+    }).catch(error => {
+      if (isConflictError(error)) {
+        void resolveBlockConflict(id);
+        return;
+      }
       get().addToast('Failed to save block position', 'error');
     });
   },
@@ -348,12 +498,19 @@ export const useAppStore = create<AppStore>()((set, get) => ({
     }
     const prevAnchor = get().sprintAnchorDate;
     const prevLength = get().sprintLengthDays;
+    const expectedUpdatedAt = get().sprintUpdatedAt;
     set({
       sprintAnchorDate: anchor,
       sprintLengthDays: length,
     });
 
-    updateSprintConfigFields(anchor, length).catch(() => {
+    updateSprintConfigFields(anchor, length, expectedUpdatedAt).then(updatedAt => {
+      set({ sprintUpdatedAt: updatedAt });
+    }).catch(error => {
+      if (isConflictError(error)) {
+        void resolveSprintConflict();
+        return;
+      }
       set({ sprintAnchorDate: prevAnchor, sprintLengthDays: prevLength });
       get().addToast('Failed to save sprint settings', 'error');
     });
@@ -393,6 +550,12 @@ export const useAppStore = create<AppStore>()((set, get) => ({
   expandTimelineAfter: (days) => set(state => ({
     renderEndDate: addDaysToISO(state.renderEndDate, days),
   })),
+
+  setZoom: (zoom) => {
+    if (get().zoom === zoom) return;
+    saveZoom(zoom);
+    set({ zoom, dayWidth: ZOOM_DAY_WIDTH[zoom] });
+  },
 
   // Online/offline
   setOnline: (online) => set({ isOnline: online }),

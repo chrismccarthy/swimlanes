@@ -67,7 +67,7 @@ export function MemberRow({ member }: MemberRowProps) {
   }, [member.id, member.name, memberBlocks.length, removeMember]);
 
   return (
-    <div className={styles.memberRow} style={{ height: rowHeight }} data-member-id={member.id}>
+    <div className={styles.memberRow} style={{ height: rowHeight }} data-testid="member-row" data-member-id={member.id}>
       <span
         className={styles.dragHandle}
         onPointerDown={onDragPointerDown}

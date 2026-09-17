@@ -3,6 +3,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { SIDEBAR_WIDTH, HEADER_HEIGHT } from '../../lib/layout';
 import { MemberRow } from './MemberRow';
 import { AddMemberForm } from './AddMemberForm';
+import { ZoomControl } from './ZoomControl';
 import styles from './Sidebar.module.css';
 
 export function Sidebar() {
@@ -21,10 +22,13 @@ export function Sidebar() {
   return (
     <div className={styles.sidebar} style={{ width: SIDEBAR_WIDTH }}>
       <div className={styles.header} style={{ height: HEADER_HEIGHT }}>
-        <span className={styles.title}>Team</span>
-        <button className={styles.gearBtn} onClick={handleSettingsClick} title="Sprint settings">
-          &#9881;
-        </button>
+        <div className={styles.headerTop}>
+          <span className={styles.title}>Team</span>
+          <button className={styles.gearBtn} onClick={handleSettingsClick} title="Sprint settings">
+            &#9881;
+          </button>
+        </div>
+        <ZoomControl />
       </div>
       <div className={styles.memberList}>
         {sortedMembers.map(member => (

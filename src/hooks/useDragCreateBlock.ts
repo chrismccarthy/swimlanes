@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { DAY_WIDTH, DRAG_THRESHOLD } from '../lib/layout';
+import { DRAG_THRESHOLD } from '../lib/layout';
 import { addDaysToISO } from '../lib/dates';
 
 interface DragCreateState {
@@ -28,8 +28,10 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
     const startX = e.clientX;
     // Capture lane rect once — the lane doesn't move during a drag
     const laneRect = e.currentTarget.getBoundingClientRect();
+    // Snap to whole days at the zoom level the drag started at
+    const dayWidth = useAppStore.getState().dayWidth;
     const relativeStartX = e.clientX - laneRect.left;
-    const snappedStartDays = Math.floor(relativeStartX / DAY_WIDTH);
+    const snappedStartDays = Math.floor(relativeStartX / dayWidth);
 
     isDragging.current = false;
     lastSnappedRef.current = null;
@@ -49,7 +51,7 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
       isDragging.current = true;
 
       const relativeCurrentX = moveEvent.clientX - laneRect.left;
-      const snappedCurrentDays = Math.floor(relativeCurrentX / DAY_WIDTH);
+      const snappedCurrentDays = Math.floor(relativeCurrentX / dayWidth);
 
       // Only re-render when the snapped day boundary actually changes
       const last = lastSnappedRef.current;
@@ -76,14 +78,14 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
       let startDate: string;
       let endDate: string;
 
-      if (totalDelta < DAY_WIDTH) {
+      if (totalDelta < dayWidth) {
         // Short drag (>= 3px but < 1 day width) — create 1-day block at drag origin
         startDate = addDaysToISO(renderStartDate, snappedStartDays);
         endDate = startDate;
       } else {
         // Full drag — multi-day block with snapped dates
         const relativeUpX = upEvent.clientX - laneRect.left;
-        const snappedUpDays = Math.floor(relativeUpX / DAY_WIDTH);
+        const snappedUpDays = Math.floor(relativeUpX / dayWidth);
         const minDays = Math.min(snappedStartDays, snappedUpDays);
         const maxDays = Math.max(snappedStartDays, snappedUpDays);
         startDate = addDaysToISO(renderStartDate, minDays);
@@ -97,6 +99,8 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
         startDate,
         endDate,
         color: 'blue',
+        // Provisional: replaced by the server's value once the block is inserted.
+        updatedAt: new Date().toISOString(),
       });
     };
 

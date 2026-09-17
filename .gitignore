@@ -9,9 +9,16 @@ lerna-debug.log*
 
 node_modules
 dist
+dist-artifact
 dist-ssr
 *.local
 .env
+
+# Playwright
+test-results
+playwright-report
+blob-report
+.playwright
 
 # Editor directories and files
 .vscode/*
@@ -24,3 +31,6 @@ dist-ssr
 *.sln
 *.sw?
 dist-artifact
+
+# Subagent worktrees
+.claude/worktrees/

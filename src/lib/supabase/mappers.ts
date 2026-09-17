@@ -36,7 +36,12 @@ export interface DbSprintConfig {
 // --- fromDb: DB row -> frontend type ---
 
 export function memberFromDb(row: DbMember): Member {
-  return { id: row.id, name: row.name, sortOrder: row.sort_order };
+  return {
+    id: row.id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    updatedAt: row.updated_at,
+  };
 }
 
 export function blockFromDb(row: DbBlock): Block {
@@ -47,9 +52,14 @@ export function blockFromDb(row: DbBlock): Block {
     startDate: row.start_date,
     endDate: row.end_date,
     color: row.color as BlockColor,
+    updatedAt: row.updated_at,
   };
 }
 
 export function sprintConfigFromDb(row: DbSprintConfig): SprintConfig {
-  return { anchorDate: row.anchor_date, lengthDays: row.length_days };
+  return {
+    anchorDate: row.anchor_date,
+    lengthDays: row.length_days,
+    updatedAt: row.updated_at,
+  };
 }

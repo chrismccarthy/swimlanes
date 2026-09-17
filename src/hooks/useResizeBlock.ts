@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { DAY_WIDTH } from '../lib/layout';
 import { addDaysToISO } from '../lib/dates';
 
 export type ResizeSide = 'left' | 'right';
@@ -22,12 +21,14 @@ export function useResizeBlock(blockId: string, side: ResizeSide) {
 
     const originalStartDate = block.startDate;
     const originalEndDate = block.endDate;
+    // Snap to whole days at the zoom level the resize started at
+    const dayWidth = useAppStore.getState().dayWidth;
 
     useAppStore.getState().lockBlock(blockId);
 
     const onPointerMove = (e: PointerEvent) => {
       const deltaX = e.clientX - startX;
-      const deltaDays = Math.round(deltaX / DAY_WIDTH);
+      const deltaDays = Math.round(deltaX / dayWidth);
 
       if (side === 'left') {
         const newStart = addDaysToISO(originalStartDate, deltaDays);

@@ -6,9 +6,11 @@ export async function fetchSprintConfig(): Promise<SprintConfig> {
   return (await getBackend()).fetchSprintConfig();
 }
 
+/** @throws ConflictError when the config no longer carries `expectedUpdatedAt`. */
 export async function updateSprintConfigFields(
   anchorDate: string,
   lengthDays: number,
-) {
-  await (await getBackend()).setSprintConfig({ anchorDate, lengthDays });
+  expectedUpdatedAt: string,
+): Promise<string> {
+  return (await getBackend()).setSprintConfig({ anchorDate, lengthDays }, expectedUpdatedAt);
 }

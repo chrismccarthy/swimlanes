@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
-import { generateDateRange, formatDayLabel, getDayOfWeek, isWeekend, daysBetween } from '../../lib/dates';
+import { isWeekend, daysBetween } from '../../lib/dates';
 import { computeSprintBoundaries, getSprintLabel } from '../../lib/sprints';
-import { DAY_WIDTH, HEADER_HEIGHT } from '../../lib/layout';
+import { HEADER_HEIGHT, computeHeaderSegments, computeTickOffsets } from '../../lib/layout';
+import type { ZoomLevel } from '../../types';
 import { isoToday } from '../../lib/dates';
 import styles from './TimelineHeader.module.css';
 
@@ -11,6 +12,8 @@ interface TimelineHeaderProps {
   sprintAnchorDate: string;
   sprintLengthDays: number;
   totalDays: number;
+  zoom: ZoomLevel;
+  dayWidth: number;
 }
 
 export function TimelineHeader({
@@ -19,12 +22,20 @@ export function TimelineHeader({
   sprintAnchorDate,
   sprintLengthDays,
   totalDays,
+  zoom,
+  dayWidth,
 }: TimelineHeaderProps) {
   const today = isoToday();
 
-  const dates = useMemo(
-    () => generateDateRange(renderStartDate, totalDays),
-    [renderStartDate, totalDays]
+  const segments = useMemo(
+    () => computeHeaderSegments(renderStartDate, totalDays, zoom),
+    [renderStartDate, totalDays, zoom]
+  );
+
+  // At day zoom every segment is already a cell boundary, so no extra ticks.
+  const ticks = useMemo(
+    () => (zoom === 'day' ? [] : computeTickOffsets(renderStartDate, totalDays, zoom)),
+    [renderStartDate, totalDays, zoom]
   );
 
   const sprints = useMemo(
@@ -43,8 +54,8 @@ export function TimelineHeader({
           // Clamp to visible range
           const visibleStart = Math.max(0, startOffset);
           const visibleEnd = Math.min(totalDays - 1, endOffset);
-          const left = visibleStart * DAY_WIDTH;
-          const width = (visibleEnd - visibleStart + 1) * DAY_WIDTH;
+          const left = visibleStart * dayWidth;
+          const width = (visibleEnd - visibleStart + 1) * dayWidth;
           if (width <= 0) return null;
 
           return (
@@ -59,20 +70,36 @@ export function TimelineHeader({
         })}
       </div>
 
-      {/* Day labels row */}
+      {/* Period labels row — days, weeks or months depending on zoom */}
       <div className={styles.dayRow}>
-        {dates.map((date, i) => (
+        {ticks.map(offset => (
           <div
-            key={date}
-            className={`${styles.dayCell} ${isWeekend(date) ? styles.weekend : ''} ${date === today ? styles.today : ''}`}
-            style={{ left: i * DAY_WIDTH, width: DAY_WIDTH }}
-          >
-            <span className={styles.dayNumber}>
-              {formatDayLabel(date, i > 0 ? dates[i - 1] : null)}
-            </span>
-            <span className={styles.dayOfWeek}>{getDayOfWeek(date)}</span>
-          </div>
+            key={`tick-${offset}`}
+            className={styles.tick}
+            style={{ left: offset * dayWidth }}
+          />
         ))}
+        {segments.map(segment =>
+          zoom === 'day' ? (
+            <div
+              key={segment.date}
+              className={`${styles.dayCell} ${isWeekend(segment.date) ? styles.weekend : ''} ${segment.date === today ? styles.today : ''}`}
+              style={{ left: segment.offsetDays * dayWidth, width: segment.spanDays * dayWidth }}
+            >
+              <span className={styles.dayNumber}>{segment.label}</span>
+              <span className={styles.dayOfWeek}>{segment.subLabel}</span>
+            </div>
+          ) : (
+            <div
+              key={segment.date}
+              className={styles.periodCell}
+              style={{ left: segment.offsetDays * dayWidth, width: segment.spanDays * dayWidth }}
+              title={segment.label}
+            >
+              <span className={styles.periodLabel}>{segment.label}</span>
+            </div>
+          )
+        )}
       </div>
     </div>
   );

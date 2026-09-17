@@ -1,4 +1,13 @@
-import { format, parseISO, addDays, differenceInCalendarDays, isWeekend as dfIsWeekend } from 'date-fns';
+import {
+  format,
+  parseISO,
+  addDays,
+  addMonths,
+  startOfMonth,
+  startOfWeek,
+  differenceInCalendarDays,
+  isWeekend as dfIsWeekend,
+} from 'date-fns';
 
 export function isoToday(): string {
   return format(new Date(), 'yyyy-MM-dd');
@@ -30,6 +39,30 @@ export function formatFullDate(date: string): string {
 
 export function getDayOfWeek(date: string): string {
   return format(parseISO(date), 'EEE');
+}
+
+/** ISO date of the Monday on or before `date` */
+export function startOfWeekISO(date: string): string {
+  return format(startOfWeek(parseISO(date), { weekStartsOn: 1 }), 'yyyy-MM-dd');
+}
+
+/** ISO date of the first of the month containing `date` */
+export function startOfMonthISO(date: string): string {
+  return format(startOfMonth(parseISO(date)), 'yyyy-MM-dd');
+}
+
+export function addMonthsToISO(date: string, months: number): string {
+  return format(addMonths(parseISO(date), months), 'yyyy-MM-dd');
+}
+
+/** Label for a week column, e.g. "Sep 1" */
+export function formatWeekLabel(date: string): string {
+  return format(parseISO(date), 'MMM d');
+}
+
+/** Label for a month column, e.g. "Sep 2026" */
+export function formatMonthLabel(date: string): string {
+  return format(parseISO(date), 'MMM yyyy');
 }
 
 /** Generate an array of ISO date strings from startDate for `count` days */

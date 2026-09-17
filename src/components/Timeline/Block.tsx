@@ -1,6 +1,6 @@
-import type { Block as BlockType } from '../../types';
+import type { Block as BlockType, ZoomLevel } from '../../types';
 import { BLOCK_COLORS } from '../../lib/colors';
-import { dateToX, DAY_WIDTH, BLOCK_HEIGHT, blockTopOffset } from '../../lib/layout';
+import { dateToX, BLOCK_HEIGHT, MIN_TITLE_WIDTH, blockTopOffset } from '../../lib/layout';
 import { daysBetween } from '../../lib/dates';
 import { useAppStore } from '../../store/useAppStore';
 import { useDragBlock } from '../../hooks/useDragBlock';
@@ -12,9 +12,11 @@ interface BlockProps {
   block: BlockType;
   trackIndex: number;
   renderStartDate: string;
+  zoom: ZoomLevel;
+  dayWidth: number;
 }
 
-export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
+export function Block({ block, trackIndex, renderStartDate, zoom, dayWidth }: BlockProps) {
   const openEditModal = useAppStore(s => s.openEditModal);
   const setContextMenu = useAppStore(s => s.setContextMenu);
   const selectedBlockId = useAppStore(s => s.selectedBlockId);
@@ -24,11 +26,19 @@ export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
   const isBeingDragged = draggingBlockId === block.id;
 
   const colors = BLOCK_COLORS[block.color];
-  const left = dateToX(block.startDate, renderStartDate);
+  const left = dateToX(block.startDate, renderStartDate, dayWidth);
   const durationDays = daysBetween(block.startDate, block.endDate) + 1; // inclusive
-  const width = durationDays * DAY_WIDTH;
+  const width = Math.max(durationDays * dayWidth, dayWidth);
   const top = blockTopOffset(trackIndex);
   const isSelected = selectedBlockId === block.id;
+
+  // Keep the label from spilling out of a narrow block: pad less when days are
+  // thin, and drop the text entirely when there is no room for even a glyph —
+  // the title attribute still surfaces it as a tooltip.
+  const isCompact = zoom !== 'day';
+  const showTitle = width >= MIN_TITLE_WIDTH;
+  const handleWidth = isCompact ? Math.max(3, Math.round(dayWidth / 4)) : 8;
+  const paddingX = isCompact ? 3 : 10;
 
   const { onPointerDown: onDragPointerDown, isDragging } = useDragBlock(block.id);
   const { onPointerDown: onResizeLeftPointerDown } = useResizeBlock(block.id, 'left');
@@ -56,24 +66,29 @@ export function Block({ block, trackIndex, renderStartDate }: BlockProps) {
   return (
     <div
       className={`${styles.block} ${isSelected ? styles.selected : ''}`}
+      data-testid="block"
+      data-block-id={block.id}
       style={{
         left,
-        width: Math.max(width, DAY_WIDTH),
+        width,
         top,
         height: BLOCK_HEIGHT,
+        paddingLeft: paddingX,
+        paddingRight: paddingX,
         backgroundColor: colors.bg,
         borderColor: colors.border,
         color: colors.text,
         ...(isBeingDragged ? { transition: 'box-shadow 0.15s ease' } : {}),
       }}
+      title={block.title}
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       onPointerDown={onDragPointerDown}
     >
-      <ResizeHandle side="left" onPointerDown={onResizeLeftPointerDown} />
-      <span className={styles.title}>{block.title}</span>
-      <ResizeHandle side="right" onPointerDown={onResizeRightPointerDown} />
+      <ResizeHandle side="left" width={handleWidth} onPointerDown={onResizeLeftPointerDown} />
+      {showTitle && <span className={styles.title}>{block.title}</span>}
+      <ResizeHandle side="right" width={handleWidth} onPointerDown={onResizeRightPointerDown} />
     </div>
   );
 }

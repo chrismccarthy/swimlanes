@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { DAY_WIDTH, DRAG_THRESHOLD } from '../lib/layout';
+import { DRAG_THRESHOLD } from '../lib/layout';
 import { addDaysToISO } from '../lib/dates';
 
 export function useDragBlock(blockId: string) {
@@ -25,6 +25,8 @@ export function useDragBlock(blockId: string) {
 
     const originalStartDate = block.startDate;
     const originalEndDate = block.endDate;
+    // Snap to whole days at the zoom level the drag started at
+    const dayWidth = useAppStore.getState().dayWidth;
     isDragging.current = false;
 
     const onPointerMove = (moveEvent: PointerEvent) => {
@@ -42,7 +44,7 @@ export function useDragBlock(blockId: string) {
         (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
       }
 
-      const deltaDays = Math.round(deltaX / DAY_WIDTH);
+      const deltaDays = Math.round(deltaX / dayWidth);
       updateBlock(blockId, {
         startDate: addDaysToISO(originalStartDate, deltaDays),
         endDate: addDaysToISO(originalEndDate, deltaDays),

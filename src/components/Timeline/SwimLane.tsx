@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react';
-import type { Block as BlockType, Member } from '../../types';
-import { assignTracks, computeRowHeight, dateToX, xToDate, BLOCK_HEIGHT, BLOCK_GAP, DAY_WIDTH } from '../../lib/layout';
+import type { Block as BlockType, Member, ZoomLevel } from '../../types';
+import { assignTracks, computeRowHeight, dateToX, xToDate, BLOCK_HEIGHT, BLOCK_GAP } from '../../lib/layout';
 import { addDaysToISO, daysBetween } from '../../lib/dates';
 import { useAppStore } from '../../store/useAppStore';
 import { useDragCreateBlock } from '../../hooks/useDragCreateBlock';
@@ -11,9 +11,11 @@ interface SwimLaneProps {
   member: Member;
   blocks: BlockType[];
   renderStartDate: string;
+  zoom: ZoomLevel;
+  dayWidth: number;
 }
 
-export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
+export function SwimLane({ member, blocks, renderStartDate, zoom, dayWidth }: SwimLaneProps) {
   const openNewBlockModal = useAppStore(s => s.openNewBlockModal);
   const { onPointerDown: onDragCreatePointerDown, dragState } = useDragCreateBlock(member.id, renderStartDate);
 
@@ -31,7 +33,7 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
     // Calculate which date was clicked based on x position within the scrollable area
     const laneRect = e.currentTarget.getBoundingClientRect();
     const relativeX = e.clientX - laneRect.left;
-    const clickedDate = xToDate(relativeX, renderStartDate);
+    const clickedDate = xToDate(relativeX, renderStartDate, dayWidth);
 
     // Pre-generate the ID so we can reference it immediately
     const id = crypto.randomUUID();
@@ -42,16 +44,18 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
       startDate: addDaysToISO(clickedDate, -1),
       endDate: addDaysToISO(clickedDate, 1),
       color: 'blue' as const,
+      // Provisional: replaced by the server's value once the block is inserted.
+      updatedAt: new Date().toISOString(),
     };
 
     openNewBlockModal(newBlock);
-  }, [member.id, renderStartDate, openNewBlockModal]);
+  }, [member.id, renderStartDate, dayWidth, openNewBlockModal]);
 
   // Compute preview rectangle position
   const previewStyle = dragState.isCreating && dragState.previewStartDate && dragState.previewEndDate
     ? {
-        left: dateToX(dragState.previewStartDate, renderStartDate),
-        width: (daysBetween(dragState.previewStartDate, dragState.previewEndDate) + 1) * DAY_WIDTH,
+        left: dateToX(dragState.previewStartDate, renderStartDate, dayWidth),
+        width: (daysBetween(dragState.previewStartDate, dragState.previewEndDate) + 1) * dayWidth,
         top: BLOCK_GAP + trackCount * (BLOCK_HEIGHT + BLOCK_GAP),
         height: BLOCK_HEIGHT,
       }
@@ -61,6 +65,7 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
     <div
       className={styles.lane}
       style={{ height: rowHeight }}
+      data-testid="swimlane"
       data-member-id={member.id}
       onDoubleClick={handleDoubleClick}
       onPointerDown={onDragCreatePointerDown}
@@ -71,6 +76,8 @@ export function SwimLane({ member, blocks, renderStartDate }: SwimLaneProps) {
           block={block}
           trackIndex={trackIndex}
           renderStartDate={renderStartDate}
+          zoom={zoom}
+          dayWidth={dayWidth}
         />
       ))}
       {previewStyle && (

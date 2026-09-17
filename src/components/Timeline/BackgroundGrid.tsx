@@ -1,7 +1,8 @@
 import { useMemo } from 'react';
 import { generateDateRange, isWeekend, daysBetween } from '../../lib/dates';
 import { computeSprintBoundaries } from '../../lib/sprints';
-import { DAY_WIDTH } from '../../lib/layout';
+import { computeTickOffsets, showsWeekendShading } from '../../lib/layout';
+import type { ZoomLevel } from '../../types';
 import styles from './BackgroundGrid.module.css';
 
 interface BackgroundGridProps {
@@ -11,6 +12,8 @@ interface BackgroundGridProps {
   sprintLengthDays: number;
   totalDays: number;
   totalHeight: number;
+  zoom: ZoomLevel;
+  dayWidth: number;
 }
 
 export function BackgroundGrid({
@@ -20,10 +23,19 @@ export function BackgroundGrid({
   sprintLengthDays,
   totalDays,
   totalHeight,
+  zoom,
+  dayWidth,
 }: BackgroundGridProps) {
+  const showWeekends = showsWeekendShading(zoom);
+
   const dates = useMemo(
-    () => generateDateRange(renderStartDate, totalDays),
-    [renderStartDate, totalDays]
+    () => (showWeekends ? generateDateRange(renderStartDate, totalDays) : []),
+    [renderStartDate, totalDays, showWeekends]
+  );
+
+  const ticks = useMemo(
+    () => computeTickOffsets(renderStartDate, totalDays, zoom),
+    [renderStartDate, totalDays, zoom]
   );
 
   const sprints = useMemo(
@@ -39,8 +51,8 @@ export function BackgroundGrid({
         const endOffset = daysBetween(renderStartDate, sprint.endDate);
         const visibleStart = Math.max(0, startOffset);
         const visibleEnd = Math.min(totalDays - 1, endOffset);
-        const left = visibleStart * DAY_WIDTH;
-        const width = (visibleEnd - visibleStart + 1) * DAY_WIDTH;
+        const left = visibleStart * dayWidth;
+        const width = (visibleEnd - visibleStart + 1) * dayWidth;
         if (width <= 0) return null;
 
         return (
@@ -52,27 +64,27 @@ export function BackgroundGrid({
         );
       })}
 
-      {/* Weekend shading */}
+      {/* Weekend shading — dropped at quarter zoom, where it would be solid noise */}
       {dates.map((date, i) =>
         isWeekend(date) ? (
           <div
             key={`wknd-${date}`}
             className={styles.weekendColumn}
             style={{
-              left: i * DAY_WIDTH,
-              width: DAY_WIDTH,
+              left: i * dayWidth,
+              width: dayWidth,
               height: totalHeight,
             }}
           />
         ) : null
       )}
 
-      {/* Day grid lines */}
-      {dates.map((_, i) => (
+      {/* Grid lines — one per day, or one per week at quarter zoom */}
+      {ticks.map(offset => (
         <div
-          key={`line-${i}`}
+          key={`line-${offset}`}
           className={styles.dayLine}
-          style={{ left: i * DAY_WIDTH, height: totalHeight }}
+          style={{ left: offset * dayWidth, height: totalHeight }}
         />
       ))}
     </div>
