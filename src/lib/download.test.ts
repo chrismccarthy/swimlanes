@@ -62,3 +62,42 @@ describe('downloadText', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('downloadFile inside the artifact viewer', () => {
+  afterEach(() => {
+    delete (window as unknown as { claude?: unknown }).claude;
+  });
+
+  function install(save: (r: { filename: string; data: Blob }) => Promise<{ status: string }>) {
+    (window as unknown as { claude: unknown }).claude = {
+      use: async (name: string) => (name === 'downloads' ? { save } : null),
+    };
+  }
+
+  it('saves through the viewer capability and reports saved', async () => {
+    const save = vi.fn(async () => ({ status: 'saved' }));
+    install(save);
+    const outcome = await downloadFile('board.png', new Blob(['x']));
+    expect(outcome).toBe('saved');
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ filename: 'board.png' }));
+  });
+
+  it('maps a declined prompt and a refused extension to distinct outcomes', async () => {
+    install(async () => { throw { code: 'declined', message: '' }; });
+    expect(await downloadFile('board.png', new Blob(['x']))).toBe('declined');
+    install(async () => { throw { code: 'rejected_extension', message: '' }; });
+    expect(await downloadFile('team.ics', new Blob(['x']))).toBe('unsupported');
+    install(async () => { throw { code: 'unavailable', message: '' }; });
+    expect(await downloadFile('board.png', new Blob(['x']))).toBe('failed');
+  });
+
+  it('falls back to an anchor when the runtime cannot serve downloads', async () => {
+    (window as unknown as { claude: unknown }).claude = { use: async () => null };
+    const createObjectURL = vi.fn(() => 'blob:mock-url');
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    expect(await downloadFile('board.png', new Blob(['x']))).toBe('saved');
+    expect(createObjectURL).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});

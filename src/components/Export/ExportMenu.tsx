@@ -3,7 +3,8 @@ import { useAppStore } from '../../store/useAppStore';
 import { isoToday } from '../../lib/dates';
 import { generateIcs } from '../../lib/ics';
 import type { IcsEvent } from '../../lib/ics';
-import { downloadFile, downloadText } from '../../lib/download';
+import { downloadFile, downloadText, saveOutcomeMessage } from '../../lib/download';
+import type { SaveOutcome } from '../../lib/download';
 import { captureBoardPng } from '../../lib/exportImage';
 import { useBoardName, exportFileName, slugify } from '../../lib/exportNames';
 import { createIcsFeedUrl } from '../../lib/supabase/icsTokens';
@@ -116,6 +117,12 @@ export function ExportMenu() {
     [menuItems]
   );
 
+  // Tell the person when a save could not happen; a declined prompt is silent.
+  const report = useCallback((outcome: SaveOutcome, what: string) => {
+    const message = saveOutcomeMessage(outcome, what);
+    if (message) addToast(message, 'error');
+  }, [addToast]);
+
   const handlePng = useCallback(async () => {
     close();
     setBusy(true);
@@ -125,13 +132,13 @@ export function ExportMenu() {
       const root = document.querySelector<HTMLElement>('.app');
       if (!root) throw new Error('The board is not on screen');
       const blob = await captureBoardPng(root);
-      downloadFile(exportFileName(boardName, isoToday(), 'png'), blob);
+      report(await downloadFile(exportFileName(boardName, isoToday(), 'png'), blob), 'the image');
     } catch {
       addToast('Could not create the image', 'error');
     } finally {
       setBusy(false);
     }
-  }, [addToast, boardName, close]);
+  }, [addToast, boardName, close, report]);
 
   const handlePrint = useCallback(() => {
     close();
@@ -148,9 +155,9 @@ export function ExportMenu() {
       exportFileName(boardName, isoToday(), 'ics'),
       generateIcs({ calendarName: `Swimlanes — ${boardName}`, events }),
       ICS_MIME
-    );
+    ).then(outcome => report(outcome, 'calendar files'));
     close();
-  }, [blocksOf, boardName, close, sortedMembers]);
+  }, [blocksOf, boardName, close, report, sortedMembers]);
 
   const handleMemberIcs = useCallback(
     (member: Member) => {
@@ -161,10 +168,10 @@ export function ExportMenu() {
           events: blocksOf(member.id).map(block => toEvent(block, block.title)),
         }),
         ICS_MIME
-      );
+      ).then(outcome => report(outcome, 'calendar files'));
       close();
     },
-    [blocksOf, close]
+    [blocksOf, close, report]
   );
 
   const handleFeed = useCallback(
