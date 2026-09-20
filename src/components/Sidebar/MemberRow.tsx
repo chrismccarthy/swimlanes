@@ -1,8 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { Member } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
+import { useDialog } from '../../store/useDialogStore';
 import { useDragMember } from '../../hooks/useDragMember';
-import { assignTracks, computeRowHeight } from '../../lib/layout';
+import { useMemberCurrentLoad } from '../../hooks/useCapacity';
+import { formatLoadPercent, loadLevel } from '../../lib/capacity';
+import { assignTracks, computeRowHeight, CAPACITY_STRIP_HEIGHT } from '../../lib/layout';
 import styles from './Sidebar.module.css';
 
 interface MemberRowProps {
@@ -13,6 +16,8 @@ export function MemberRow({ member }: MemberRowProps) {
   const renameMember = useAppStore(s => s.renameMember);
   const removeMember = useAppStore(s => s.removeMember);
   const blocks = useAppStore(s => s.blocks);
+  const { confirm } = useDialog();
+  const capacityEnabled = useAppStore(s => s.capacityEnabled);
 
   const { onPointerDown: onDragPointerDown } = useDragMember(member.id);
 
@@ -29,7 +34,9 @@ export function MemberRow({ member }: MemberRowProps) {
     () => assignTracks(memberBlocks),
     [memberBlocks]
   );
-  const rowHeight = computeRowHeight(trackCount);
+  // Must track SwimLane exactly, including the band the capacity strip takes.
+  const currentLoad = useMemberCurrentLoad(member.id);
+  const rowHeight = computeRowHeight(trackCount, capacityEnabled ? CAPACITY_STRIP_HEIGHT : 0);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -61,10 +68,15 @@ export function MemberRow({ member }: MemberRowProps) {
     const msg = blockCount > 0
       ? `Delete "${member.name}" and their ${blockCount} block${blockCount === 1 ? '' : 's'}?`
       : `Delete "${member.name}"?`;
-    if (window.confirm(msg)) {
-      removeMember(member.id);
-    }
-  }, [member.id, member.name, memberBlocks.length, removeMember]);
+    void confirm({
+      title: 'Remove member?',
+      message: msg,
+      confirmLabel: 'Remove',
+      danger: true,
+    }).then(ok => {
+      if (ok) removeMember(member.id);
+    });
+  }, [member.id, member.name, memberBlocks.length, removeMember, confirm]);
 
   return (
     <div className={styles.memberRow} style={{ height: rowHeight }} data-testid="member-row" data-member-id={member.id}>
@@ -87,6 +99,16 @@ export function MemberRow({ member }: MemberRowProps) {
       ) : (
         <span className={styles.memberName} onDoubleClick={handleDoubleClick}>
           {member.name}
+        </span>
+      )}
+      {currentLoad && (
+        <span
+          className={`${styles.memberLoad} ${styles[loadLevel(currentLoad.load)]}`}
+          data-testid="member-load"
+          data-load={loadLevel(currentLoad.load)}
+          title={`${currentLoad.committedDays} / ${currentLoad.availableDays} d committed this sprint`}
+        >
+          {formatLoadPercent(currentLoad.load)}
         </span>
       )}
       <button

@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-const PORT = 5175;
+// 5175 by default; PW_PORT moves the run (and its dev server) to another port
+// when something else already holds it, e.g. a second checkout of this repo.
+const PORT = Number(process.env.PW_PORT ?? 5175);
 const BASE_URL = `http://localhost:${PORT}`;
 
 /**

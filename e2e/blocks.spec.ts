@@ -132,13 +132,12 @@ test.describe('blocks', () => {
     await expect(blockByTitle(page, 'Spec review (copy)')).toBeVisible();
     await expect(page.getByTestId('block')).toHaveCount(2);
 
-    // Delete the copy, confirming the dialog
-    page.once('dialog', (dialog) => {
-      expect(dialog.message()).toContain('Delete this block?');
-      void dialog.accept();
-    });
+    // Delete the copy, confirming the in-app dialog
     await blockByTitle(page, 'Spec review (copy)').click({ button: 'right' });
     await page.getByRole('button', { name: 'Delete' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Delete this block?');
+    await dialog.getByRole('button', { name: 'Delete' }).click();
 
     await expect(page.getByTestId('block')).toHaveCount(1);
     await expect(blockByTitle(page, 'Spec review')).toBeVisible();

@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/useAppStore';
+import { useDialog } from '../../store/useDialogStore';
 import { useContextMenuDismiss } from '../../hooks/useContextMenu';
 import styles from './ContextMenu.module.css';
 
@@ -7,6 +8,7 @@ export function ContextMenu() {
   const openEditModal = useAppStore(s => s.openEditModal);
   const duplicateBlock = useAppStore(s => s.duplicateBlock);
   const deleteBlock = useAppStore(s => s.deleteBlock);
+  const { confirm } = useDialog();
 
   useContextMenuDismiss();
 
@@ -24,9 +26,15 @@ export function ContextMenu() {
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (window.confirm('Delete this block?')) {
-      deleteBlock(contextMenu.blockId);
-    }
+    const blockId = contextMenu.blockId;
+    void confirm({
+      title: 'Delete block?',
+      message: 'Delete this block?',
+      confirmLabel: 'Delete',
+      danger: true,
+    }).then(ok => {
+      if (ok) deleteBlock(blockId);
+    });
   };
 
   return (

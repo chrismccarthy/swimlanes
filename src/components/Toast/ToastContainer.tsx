@@ -17,7 +17,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return createPortal(
-    <div className={styles.container}>
+    <div className={styles.container} data-print="hide">
       {toasts.map(toast => (
         <div
           key={toast.id}
@@ -25,6 +25,18 @@ export function ToastContainer() {
           onClick={() => dismissToast(toast.id)}
         >
           {toast.message}
+          {toast.action && (
+            // The click bubbles to the toast, which dismisses it — an action
+            // always ends the toast it was offered on.
+            <button
+              type="button"
+              className={styles.action}
+              data-testid="toast-action"
+              onClick={toast.action.onClick}
+            >
+              {toast.action.label}
+            </button>
+          )}
         </div>
       ))}
     </div>,

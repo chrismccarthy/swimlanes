@@ -6,10 +6,16 @@
  * lives in the artifact's shared realtime document store when the page is
  * opened inside claude.ai, and falls back to localStorage anywhere else.
  */
-import type { Block, BlockColor, Member, SprintConfig } from '../types';
+import type { Block, Board, Member, BlockColor, SprintConfig } from '../types';
 import { ConflictError } from '../lib/supabase/errors';
+import { ALL_COLORS } from '../lib/colors';
+import { backoffDelay } from '../lib/backoff';
+import { normaliseTags } from '../lib/tags';
 
 export type Change =
+  /** Connection health, mirroring what the Supabase channel reports. */
+  | { kind: 'status'; status: 'live' | 'reconnecting' }
+  | { kind: 'boards'; boards: Board[] }
   | { kind: 'member'; type: 'upsert'; member: Member }
   | { kind: 'member'; type: 'remove'; id: string }
   | { kind: 'block'; type: 'upsert'; block: Block }
@@ -18,15 +24,24 @@ export type Change =
 
 export type ChangeListener = (change: Change) => void;
 
-export type MemberPatch = Partial<Omit<Member, 'id' | 'updatedAt'>>;
-export type BlockPatch = Partial<Omit<Block, 'id' | 'updatedAt'>>;
+export type MemberPatch = Partial<Omit<Member, 'id' | 'boardId' | 'updatedAt'>>;
+export type BlockPatch = Partial<Omit<Block, 'id' | 'boardId' | 'updatedAt'>>;
+
+/** Sprint fields a client may write; the board and the token are not among them. */
+export type SprintFields = Pick<SprintConfig, 'anchorDate' | 'lengthDays'>;
 
 export interface Backend {
-  fetchMembers(): Promise<Member[]>;
-  fetchBlocks(): Promise<Block[]>;
+  /** Boards in this artifact. Creates the default one on an empty store. */
+  fetchBoards(): Promise<Board[]>;
+  createBoard(name: string, id?: string): Promise<Board>;
+  renameBoard(id: string, name: string, expectedUpdatedAt: string): Promise<string>;
+  deleteBoard(id: string): Promise<void>;
+  /** Everything below is scoped to one board. */
+  fetchMembers(boardId: string): Promise<Member[]>;
+  fetchBlocks(boardId: string): Promise<Block[]>;
   fetchMember(id: string): Promise<Member | null>;
   fetchBlock(id: string): Promise<Block | null>;
-  fetchSprintConfig(): Promise<SprintConfig>;
+  fetchSprintConfig(boardId: string): Promise<SprintConfig>;
   /** All writers return the new `updatedAt` they stamped on the document. */
   insertMember(member: Omit<Member, 'updatedAt'>): Promise<string>;
   updateMember(id: string, patch: MemberPatch, expectedUpdatedAt: string): Promise<string>;
@@ -34,18 +49,28 @@ export interface Backend {
   insertBlock(block: Block): Promise<string>;
   updateBlock(id: string, patch: BlockPatch, expectedUpdatedAt: string): Promise<string>;
   deleteBlock(id: string): Promise<void>;
-  setSprintConfig(config: Omit<SprintConfig, 'updatedAt'>, expectedUpdatedAt: string): Promise<string>;
-  subscribe(listener: ChangeListener): () => void;
+  setSprintConfig(boardId: string, config: SprintFields, expectedUpdatedAt: string): Promise<string>;
+  /**
+   * Live changes for one board plus the board list itself. Callers tear the
+   * subscription down and re-open it when the current board changes.
+   */
+  subscribe(boardId: string, listener: ChangeListener): () => void;
 }
 
-/** Version token a never-written sprint config starts from. */
+/** Version token a never-written document starts from. */
 const SPRINT_EPOCH = new Date(0).toISOString();
 
-export const DEFAULT_SPRINT_CONFIG: SprintConfig = {
+/** The board a store with no boards in it gets. */
+export const DEFAULT_BOARD_NAME = 'Team';
+
+export const DEFAULT_SPRINT_FIELDS: SprintFields = {
   anchorDate: '2026-02-12',
   lengthDays: 14,
-  updatedAt: SPRINT_EPOCH,
 };
+
+export function defaultSprintConfig(boardId: string): SprintConfig {
+  return { boardId, ...DEFAULT_SPRINT_FIELDS, updatedAt: SPRINT_EPOCH };
+}
 
 function now(): string {
   return new Date().toISOString();
@@ -98,8 +123,6 @@ interface ClaudeRuntime {
 
 // --- Validation of untrusted document bodies ---
 
-const COLORS: BlockColor[] = ['blue', 'green', 'amber', 'red', 'purple', 'pink', 'teal', 'orange'];
-
 function str(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : fallback;
 }
@@ -109,12 +132,23 @@ function num(v: unknown, fallback: number): number {
 }
 
 function color(v: unknown): BlockColor {
-  return COLORS.includes(v as BlockColor) ? (v as BlockColor) : 'blue';
+  return ALL_COLORS.includes(v as BlockColor) ? (v as BlockColor) : 'blue';
+}
+
+function boardFromDoc(id: string, d: DocData): Board {
+  return {
+    id,
+    name: str(d.name, DEFAULT_BOARD_NAME),
+    // Membership is not enforced in this build — artifact sharing is.
+    role: 'owner',
+    updatedAt: str(d.updatedAt, SPRINT_EPOCH),
+  };
 }
 
 function memberFromDoc(id: string, d: DocData): Member {
   return {
     id,
+    boardId: str(d.boardId),
     name: str(d.name),
     sortOrder: num(d.sortOrder, 0),
     updatedAt: str(d.updatedAt, SPRINT_EPOCH),
@@ -124,21 +158,27 @@ function memberFromDoc(id: string, d: DocData): Member {
 function blockFromDoc(id: string, d: DocData): Block {
   return {
     id,
+    boardId: str(d.boardId),
     memberId: str(d.memberId),
     title: str(d.title),
     startDate: str(d.startDate),
     endDate: str(d.endDate),
     color: color(d.color),
+    // Untrusted document body: anything that is not a list of usable tags
+    // collapses to none (see normaliseTags — trimmed, deduped, max 10).
+    tags: normaliseTags(d.tags),
     updatedAt: str(d.updatedAt, SPRINT_EPOCH),
   };
 }
 
-function sprintFromDoc(d: DocData | undefined): SprintConfig {
-  if (!d) return DEFAULT_SPRINT_CONFIG;
+function sprintFromDoc(boardId: string, d: DocData | undefined): SprintConfig {
+  const fallback = defaultSprintConfig(boardId);
+  if (!d) return fallback;
   return {
-    anchorDate: str(d.anchorDate, DEFAULT_SPRINT_CONFIG.anchorDate),
-    lengthDays: num(d.lengthDays, DEFAULT_SPRINT_CONFIG.lengthDays),
-    updatedAt: str(d.updatedAt, DEFAULT_SPRINT_CONFIG.updatedAt),
+    boardId,
+    anchorDate: str(d.anchorDate, fallback.anchorDate),
+    lengthDays: num(d.lengthDays, fallback.lengthDays),
+    updatedAt: str(d.updatedAt, fallback.updatedAt),
   };
 }
 
@@ -153,17 +193,54 @@ function stripUndefined(patch: Record<string, unknown>): DocData {
 // --- Artifact db backend (shared, realtime, persistent) ---
 
 function createDbBackend(db: Db): Backend {
+  const boards = db.collection('boards');
   const members = db.collection('members');
   const blocks = db.collection('blocks');
-  const sprint = db.doc('config/sprint');
+  // One sprint document per board, so switching boards switches settings.
+  const sprintDoc = (boardId: string) => db.doc(`config/sprint-${boardId}`);
 
   return {
-    async fetchMembers() {
-      const snap = await members.orderBy('sortOrder').get();
+    async fetchBoards() {
+      const snap = await boards.get();
+      const found = snap.docs.filter(d => d.exists).map(d => boardFromDoc(d.id, d.data()!));
+      if (found.length > 0) return found;
+      // A brand-new artifact starts with one board so the app is usable
+      // immediately; membership is not a concept here.
+      return [await this.createBoard(DEFAULT_BOARD_NAME)];
+    },
+    async createBoard(name, id) {
+      const boardId = id ?? crypto.randomUUID();
+      const updatedAt = now();
+      await boards.doc(boardId).set({ name, updatedAt });
+      return { id: boardId, name, role: 'owner', updatedAt };
+    },
+    async renameBoard(id, name, expectedUpdatedAt) {
+      const snap = await boards.doc(id).get();
+      if (!snap.exists) throw new ConflictError('board', id);
+      const current = boardFromDoc(snap.id, snap.data() ?? {});
+      if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('board', id);
+      const updatedAt = now();
+      await boards.doc(id).update({ name, updatedAt });
+      return updatedAt;
+    },
+    async deleteBoard(id) {
+      await boards.doc(id).delete();
+      const [ownedMembers, ownedBlocks] = await Promise.all([
+        members.where('boardId', '==', id).get(),
+        blocks.where('boardId', '==', id).get(),
+      ]);
+      await Promise.all([
+        ...ownedMembers.docs.map(d => members.doc(d.id).delete()),
+        ...ownedBlocks.docs.map(d => blocks.doc(d.id).delete()),
+        sprintDoc(id).delete(),
+      ]);
+    },
+    async fetchMembers(boardId) {
+      const snap = await members.where('boardId', '==', boardId).orderBy('sortOrder').get();
       return snap.docs.filter(d => d.exists).map(d => memberFromDoc(d.id, d.data()!));
     },
-    async fetchBlocks() {
-      const snap = await blocks.get();
+    async fetchBlocks(boardId) {
+      const snap = await blocks.where('boardId', '==', boardId).get();
       return snap.docs.filter(d => d.exists).map(d => blockFromDoc(d.id, d.data()!));
     },
     async fetchMember(id) {
@@ -174,13 +251,18 @@ function createDbBackend(db: Db): Backend {
       const snap = await blocks.doc(id).get();
       return snap.exists ? blockFromDoc(snap.id, snap.data() ?? {}) : null;
     },
-    async fetchSprintConfig() {
-      const snap = await sprint.get();
-      return sprintFromDoc(snap.exists ? snap.data() : undefined);
+    async fetchSprintConfig(boardId) {
+      const snap = await sprintDoc(boardId).get();
+      return sprintFromDoc(boardId, snap.exists ? snap.data() : undefined);
     },
     async insertMember(m) {
       const updatedAt = now();
-      await members.doc(m.id).set({ name: m.name, sortOrder: m.sortOrder, updatedAt });
+      await members.doc(m.id).set({
+        boardId: m.boardId,
+        name: m.name,
+        sortOrder: m.sortOrder,
+        updatedAt,
+      });
       return updatedAt;
     },
     async updateMember(id, patch, expectedUpdatedAt) {
@@ -203,11 +285,13 @@ function createDbBackend(db: Db): Backend {
     async insertBlock(b) {
       const updatedAt = now();
       await blocks.doc(b.id).set({
+        boardId: b.boardId,
         memberId: b.memberId,
         title: b.title,
         startDate: b.startDate,
         endDate: b.endDate,
         color: b.color,
+        tags: normaliseTags(b.tags),
         updatedAt,
       });
       return updatedAt;
@@ -218,44 +302,111 @@ function createDbBackend(db: Db): Backend {
       const current = blockFromDoc(snap.id, snap.data() ?? {});
       if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('block', id);
       const updatedAt = now();
-      await blocks.doc(id).update({ ...stripUndefined(patch), updatedAt });
+      await blocks.doc(id).update({
+        ...stripUndefined(patch),
+        ...(patch.tags !== undefined ? { tags: normaliseTags(patch.tags) } : {}),
+        updatedAt,
+      });
       return updatedAt;
     },
     deleteBlock(id) {
       return blocks.doc(id).delete();
     },
-    async setSprintConfig(config, expectedUpdatedAt) {
-      const snap = await sprint.get();
-      const current = sprintFromDoc(snap.exists ? snap.data() : undefined);
+    async setSprintConfig(boardId, config, expectedUpdatedAt) {
+      const doc = sprintDoc(boardId);
+      const snap = await doc.get();
+      const current = sprintFromDoc(boardId, snap.exists ? snap.data() : undefined);
       if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('sprint settings');
       const updatedAt = now();
-      await sprint.set({
+      await doc.set({
         anchorDate: config.anchorDate,
         lengthDays: config.lengthDays,
         updatedAt,
       });
       return updatedAt;
     },
-    subscribe(listener) {
-      const onError = (e: unknown) => console.warn('Swimlanes: realtime subscription ended', e);
-      const unsubs = [
-        members.onSnapshot(snap => {
-          for (const c of snap.docChanges()) {
-            if (c.type === 'removed') listener({ kind: 'member', type: 'remove', id: c.doc.id });
-            else listener({ kind: 'member', type: 'upsert', member: memberFromDoc(c.doc.id, c.doc.data() ?? {}) });
+    subscribe(boardId, listener) {
+      // The db capability terminates a listener when it errors and never
+      // revives it, so recovery means opening a fresh set of snapshots. All
+      // four are re-opened together, on the same backoff the Supabase channel
+      // uses, and the first snapshot each one delivers carries the whole
+      // current state — which is the gap recovery.
+      let closed = false;
+      let attempt = 0;
+      let retryTimer: ReturnType<typeof setTimeout> | null = null;
+      let unsubs: (() => void)[] = [];
+
+      const teardown = () => {
+        unsubs.forEach(u => {
+          try {
+            u();
+          } catch {
+            // A listener the capability already dropped may throw; ignore.
           }
-        }, onError),
-        blocks.onSnapshot(snap => {
-          for (const c of snap.docChanges()) {
-            if (c.type === 'removed') listener({ kind: 'block', type: 'remove', id: c.doc.id });
-            else listener({ kind: 'block', type: 'upsert', block: blockFromDoc(c.doc.id, c.doc.data() ?? {}) });
-          }
-        }, onError),
-        sprint.onSnapshot(snap => {
-          if (snap.exists) listener({ kind: 'sprint', config: sprintFromDoc(snap.data()) });
-        }, onError),
-      ];
-      return () => unsubs.forEach(u => u());
+        });
+        unsubs = [];
+      };
+
+      const onError = (e: unknown) => {
+        if (closed || retryTimer !== null) return;
+        console.warn('Swimlanes: realtime subscription ended, reconnecting', e);
+        listener({ kind: 'status', status: 'reconnecting' });
+        teardown();
+        const delay = backoffDelay(attempt);
+        attempt += 1;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (closed) return;
+          open();
+        }, delay);
+      };
+
+      // Any snapshot arriving is proof the connection works: the status goes
+      // back to live and the backoff starts over from 1s.
+      const ok = () => {
+        if (closed) return;
+        attempt = 0;
+        listener({ kind: 'status', status: 'live' });
+      };
+
+      const open = () => {
+        unsubs = [
+          boards.onSnapshot(snap => {
+            ok();
+            listener({
+              kind: 'boards',
+              boards: snap.docs.filter(d => d.exists).map(d => boardFromDoc(d.id, d.data()!)),
+            });
+          }, onError),
+          members.where('boardId', '==', boardId).onSnapshot(snap => {
+            ok();
+            for (const c of snap.docChanges()) {
+              if (c.type === 'removed') listener({ kind: 'member', type: 'remove', id: c.doc.id });
+              else listener({ kind: 'member', type: 'upsert', member: memberFromDoc(c.doc.id, c.doc.data() ?? {}) });
+            }
+          }, onError),
+          blocks.where('boardId', '==', boardId).onSnapshot(snap => {
+            ok();
+            for (const c of snap.docChanges()) {
+              if (c.type === 'removed') listener({ kind: 'block', type: 'remove', id: c.doc.id });
+              else listener({ kind: 'block', type: 'upsert', block: blockFromDoc(c.doc.id, c.doc.data() ?? {}) });
+            }
+          }, onError),
+          sprintDoc(boardId).onSnapshot(snap => {
+            ok();
+            if (snap.exists) listener({ kind: 'sprint', config: sprintFromDoc(boardId, snap.data()) });
+          }, onError),
+        ];
+      };
+
+      open();
+
+      return () => {
+        closed = true;
+        if (retryTimer !== null) clearTimeout(retryTimer);
+        retryTimer = null;
+        teardown();
+      };
     },
   };
 }
@@ -264,31 +415,90 @@ function createDbBackend(db: Db): Backend {
 
 const LOCAL_KEY = 'swimlanes.artifact.data';
 
-interface LocalData {
+export interface LocalData {
+  boards: Board[];
   members: Member[];
   blocks: Block[];
-  sprint: SprintConfig;
+  /** Sprint settings per board id. */
+  sprints: Record<string, SprintConfig>;
+}
+
+/** The shape stored before boards existed: one flat team, one sprint config. */
+interface LegacyLocalData {
+  members?: (Member & { boardId?: string })[];
+  blocks?: (Block & { boardId?: string })[];
+  sprint?: SprintConfig;
+}
+
+export function emptyLocalData(): LocalData {
+  return { boards: [], members: [], blocks: [], sprints: {} };
+}
+
+/**
+ * Parses stored data, migrating anything written before boards existed.
+ *
+ * Pre-board data is adopted into a single board named "Team" so nothing is
+ * lost: every member and block is stamped with its id and the one sprint
+ * config becomes that board's. Exported for the unit test.
+ */
+export function migrateLocalData(parsed: unknown, boardId: string): LocalData {
+  const raw = (parsed ?? {}) as LegacyLocalData & Partial<LocalData>;
+  // Data written before optimistic concurrency existed has no updatedAt;
+  // give it the epoch token so the first write still version-checks.
+  const withToken = <T extends { updatedAt: string }>(v: T): T =>
+    typeof v.updatedAt === 'string' ? v : { ...v, updatedAt: SPRINT_EPOCH };
+
+  // Blocks written before tags existed have no `tags` field at all.
+  const withTags = (b: Block): Block => ({ ...b, tags: normaliseTags(b.tags) });
+
+  const boards = Array.isArray(raw.boards) ? raw.boards.map(withToken) : [];
+  const legacyBoardId = boards.length > 0 ? boards[0].id : boardId;
+  const stamp = <T extends { boardId?: string }>(v: T): T =>
+    typeof v.boardId === 'string' && v.boardId ? v : { ...v, boardId: legacyBoardId };
+
+  const members = Array.isArray(raw.members) ? raw.members.map(withToken).map(stamp) : [];
+  const blocks = Array.isArray(raw.blocks) ? raw.blocks.map(withToken).map(stamp).map(withTags) : [];
+
+  const sprints: Record<string, SprintConfig> = {};
+  if (raw.sprints && typeof raw.sprints === 'object') {
+    for (const [id, config] of Object.entries(raw.sprints)) {
+      sprints[id] = { ...withToken(config), boardId: id };
+    }
+  }
+  // The single pre-boards sprint config becomes the default board's.
+  if (raw.sprint && !sprints[legacyBoardId]) {
+    sprints[legacyBoardId] = { ...withToken(raw.sprint), boardId: legacyBoardId };
+  }
+
+  // Only invent the default board when there is legacy content to hold.
+  if (boards.length === 0 && (members.length > 0 || blocks.length > 0 || raw.sprint)) {
+    boards.push({
+      id: legacyBoardId,
+      name: DEFAULT_BOARD_NAME,
+      role: 'owner',
+      updatedAt: SPRINT_EPOCH,
+    });
+  }
+
+  return { boards, members, blocks, sprints };
 }
 
 function readLocal(): LocalData {
+  let parsed: unknown;
   try {
     const raw = localStorage.getItem(LOCAL_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Partial<LocalData>;
-      // Data written before optimistic concurrency existed has no updatedAt;
-      // give it the epoch token so the first write still version-checks.
-      const withToken = <T extends { updatedAt: string }>(v: T): T =>
-        typeof v.updatedAt === 'string' ? v : { ...v, updatedAt: SPRINT_EPOCH };
-      return {
-        members: Array.isArray(parsed.members) ? parsed.members.map(withToken) : [],
-        blocks: Array.isArray(parsed.blocks) ? parsed.blocks.map(withToken) : [],
-        sprint: parsed.sprint ? withToken(parsed.sprint) : DEFAULT_SPRINT_CONFIG,
-      };
-    }
+    if (!raw) return emptyLocalData();
+    parsed = JSON.parse(raw);
   } catch {
-    // fall through to empty state
+    return emptyLocalData();
   }
-  return { members: [], blocks: [], sprint: DEFAULT_SPRINT_CONFIG };
+  const migrated = migrateLocalData(parsed, crypto.randomUUID());
+  // The generated board id must not change between reads, so persist the
+  // migrated shape the first time it is produced.
+  if (!(parsed as Partial<LocalData>)?.boards && migrated.boards.length > 0) {
+    writeLocal(migrated);
+  }
+  return migrated;
 }
 
 function writeLocal(data: LocalData) {
@@ -316,13 +526,41 @@ function createLocalBackend(): Backend {
   };
 
   return {
-    fetchMembers: () => {
+    async fetchBoards() {
       data = readLocal();
-      return Promise.resolve([...data.members].sort((a, b) => a.sortOrder - b.sortOrder));
+      if (data.boards.length > 0) return [...data.boards];
+      // A fresh browser starts with one board so the app is usable straight
+      // away (and so the e2e suite's blank-slate flows still work).
+      return [await this.createBoard(DEFAULT_BOARD_NAME)];
     },
-    fetchBlocks: () => {
+    async createBoard(name, id) {
+      const boardId = id ?? crypto.randomUUID();
+      const board: Board = { id: boardId, name, role: 'owner', updatedAt: now() };
+      await mutate(d => { d.boards.push(board); });
+      return board;
+    },
+    renameBoard: (id, name, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
+      const current = d.boards.find(b => b.id === id);
+      if (!current || current.updatedAt !== expectedUpdatedAt) {
+        throw new ConflictError('board', id);
+      }
+      d.boards = d.boards.map(b => (b.id === id ? { ...b, name, updatedAt } : b));
+    }),
+    deleteBoard: id => mutate(d => {
+      d.boards = d.boards.filter(b => b.id !== id);
+      d.members = d.members.filter(m => m.boardId !== id);
+      d.blocks = d.blocks.filter(b => b.boardId !== id);
+      delete d.sprints[id];
+    }),
+    fetchMembers: (boardId) => {
       data = readLocal();
-      return Promise.resolve([...data.blocks]);
+      return Promise.resolve(
+        data.members.filter(m => m.boardId === boardId).sort((a, b) => a.sortOrder - b.sortOrder),
+      );
+    },
+    fetchBlocks: (boardId) => {
+      data = readLocal();
+      return Promise.resolve(data.blocks.filter(b => b.boardId === boardId));
     },
     fetchMember: id => {
       data = readLocal();
@@ -332,9 +570,9 @@ function createLocalBackend(): Backend {
       data = readLocal();
       return Promise.resolve(data.blocks.find(b => b.id === id) ?? null);
     },
-    fetchSprintConfig: () => {
+    fetchSprintConfig: (boardId) => {
       data = readLocal();
-      return Promise.resolve(data.sprint);
+      return Promise.resolve(data.sprints[boardId] ?? defaultSprintConfig(boardId));
     },
     insertMember: m => mutateStamped((d, updatedAt) => { d.members.push({ ...m, updatedAt }); }),
     updateMember: (id, patch, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
@@ -349,33 +587,45 @@ function createLocalBackend(): Backend {
       d.members = d.members.filter(m => m.id !== id);
       d.blocks = d.blocks.filter(b => b.memberId !== id);
     }),
-    insertBlock: b => mutateStamped((d, updatedAt) => { d.blocks.push({ ...b, updatedAt }); }),
+    insertBlock: b => mutateStamped((d, updatedAt) => {
+      d.blocks.push({ ...b, tags: normaliseTags(b.tags), updatedAt });
+    }),
     updateBlock: (id, patch, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
       const current = d.blocks.find(b => b.id === id);
       if (!current || current.updatedAt !== expectedUpdatedAt) {
         throw new ConflictError('block', id);
       }
       d.blocks = d.blocks.map(b =>
-        b.id === id ? { ...b, ...stripUndefined(patch), updatedAt } : b);
+        b.id === id
+          ? { ...b, ...stripUndefined(patch), tags: normaliseTags(patch.tags ?? b.tags), updatedAt }
+          : b);
     }),
     deleteBlock: id => mutate(d => { d.blocks = d.blocks.filter(b => b.id !== id); }),
-    setSprintConfig: (config, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
-      if (d.sprint.updatedAt !== expectedUpdatedAt) throw new ConflictError('sprint settings');
-      d.sprint = { ...config, updatedAt };
+    setSprintConfig: (boardId, config, expectedUpdatedAt) => mutateStamped((d, updatedAt) => {
+      const current = d.sprints[boardId] ?? defaultSprintConfig(boardId);
+      if (current.updatedAt !== expectedUpdatedAt) throw new ConflictError('sprint settings');
+      d.sprints[boardId] = { boardId, ...config, updatedAt };
     }),
-    subscribe(listener) {
+    subscribe(boardId, listener) {
+      // Nothing to lose a connection to: this browser's own storage is always
+      // live. (The offline override still applies — see `setSyncStatus`.)
+      listener({ kind: 'status', status: 'live' });
       // Cross-tab sync in the same browser: reload and diff on storage events.
       const onStorage = (e: StorageEvent) => {
         if (e.key !== LOCAL_KEY) return;
         const prev = data;
         data = readLocal();
-        const nextMemberIds = new Set(data.members.map(m => m.id));
-        const nextBlockIds = new Set(data.blocks.map(b => b.id));
-        prev.members.forEach(m => { if (!nextMemberIds.has(m.id)) listener({ kind: 'member', type: 'remove', id: m.id }); });
-        prev.blocks.forEach(b => { if (!nextBlockIds.has(b.id)) listener({ kind: 'block', type: 'remove', id: b.id }); });
-        data.members.forEach(member => listener({ kind: 'member', type: 'upsert', member }));
-        data.blocks.forEach(block => listener({ kind: 'block', type: 'upsert', block }));
-        listener({ kind: 'sprint', config: data.sprint });
+        listener({ kind: 'boards', boards: [...data.boards] });
+        // Only the board on screen is merged into the store; the rest of the
+        // artifact's data belongs to other teams.
+        const onBoard = <T extends { boardId: string }>(v: T) => v.boardId === boardId;
+        const nextMemberIds = new Set(data.members.filter(onBoard).map(m => m.id));
+        const nextBlockIds = new Set(data.blocks.filter(onBoard).map(b => b.id));
+        prev.members.filter(onBoard).forEach(m => { if (!nextMemberIds.has(m.id)) listener({ kind: 'member', type: 'remove', id: m.id }); });
+        prev.blocks.filter(onBoard).forEach(b => { if (!nextBlockIds.has(b.id)) listener({ kind: 'block', type: 'remove', id: b.id }); });
+        data.members.filter(onBoard).forEach(member => listener({ kind: 'member', type: 'upsert', member }));
+        data.blocks.filter(onBoard).forEach(block => listener({ kind: 'block', type: 'upsert', block }));
+        listener({ kind: 'sprint', config: data.sprints[boardId] ?? defaultSprintConfig(boardId) });
       };
       window.addEventListener('storage', onStorage);
       return () => window.removeEventListener('storage', onStorage);

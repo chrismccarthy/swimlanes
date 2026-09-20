@@ -1,10 +1,20 @@
 import { useMemo, useCallback } from 'react';
 import type { Block as BlockType, Member, ZoomLevel } from '../../types';
-import { assignTracks, computeRowHeight, dateToX, xToDate, BLOCK_HEIGHT, BLOCK_GAP } from '../../lib/layout';
+import {
+  assignTracks,
+  computeRowHeight,
+  dateToX,
+  xToDate,
+  BLOCK_HEIGHT,
+  BLOCK_GAP,
+  CAPACITY_STRIP_HEIGHT,
+} from '../../lib/layout';
 import { addDaysToISO, daysBetween } from '../../lib/dates';
 import { useAppStore } from '../../store/useAppStore';
 import { useDragCreateBlock } from '../../hooks/useDragCreateBlock';
+import { useMemberCapacityStrip } from '../../hooks/useCapacity';
 import { Block } from './Block';
+import { CapacityStrip } from './CapacityStrip';
 import styles from './SwimLane.module.css';
 
 interface SwimLaneProps {
@@ -24,7 +34,11 @@ export function SwimLane({ member, blocks, renderStartDate, zoom, dayWidth }: Sw
     [blocks]
   );
 
-  const rowHeight = computeRowHeight(trackCount);
+  // The capacity strip takes a band off the top of the row; the tracks below
+  // it are pushed down by the same amount so nothing overlaps.
+  const capacity = useMemberCapacityStrip(member.id);
+  const capacityOffset = capacity ? CAPACITY_STRIP_HEIGHT : 0;
+  const rowHeight = computeRowHeight(trackCount, capacityOffset);
 
   const handleDoubleClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // Only fire on the lane background, not on blocks
@@ -44,6 +58,7 @@ export function SwimLane({ member, blocks, renderStartDate, zoom, dayWidth }: Sw
       startDate: addDaysToISO(clickedDate, -1),
       endDate: addDaysToISO(clickedDate, 1),
       color: 'blue' as const,
+      tags: [],
       // Provisional: replaced by the server's value once the block is inserted.
       updatedAt: new Date().toISOString(),
     };
@@ -70,19 +85,31 @@ export function SwimLane({ member, blocks, renderStartDate, zoom, dayWidth }: Sw
       onDoubleClick={handleDoubleClick}
       onPointerDown={onDragCreatePointerDown}
     >
-      {assignments.map(({ block, trackIndex }) => (
-        <Block
-          key={block.id}
-          block={block}
-          trackIndex={trackIndex}
+      {capacity && (
+        <CapacityStrip
+          sprints={capacity.sprints}
+          figures={capacity.figures}
           renderStartDate={renderStartDate}
-          zoom={zoom}
+          totalDays={capacity.totalDays}
           dayWidth={dayWidth}
+          showText={zoom !== 'quarter'}
         />
-      ))}
-      {previewStyle && (
-        <div className={styles.previewBlock} style={previewStyle} />
       )}
+      <div className={styles.tracks} style={{ top: capacityOffset }}>
+        {assignments.map(({ block, trackIndex }) => (
+          <Block
+            key={block.id}
+            block={block}
+            trackIndex={trackIndex}
+            renderStartDate={renderStartDate}
+            zoom={zoom}
+            dayWidth={dayWidth}
+          />
+        ))}
+        {previewStyle && (
+          <div className={styles.previewBlock} style={previewStyle} />
+        )}
+      </div>
     </div>
   );
 }

@@ -4,6 +4,9 @@ import { computeSprintBoundaries, getSprintLabel } from '../../lib/sprints';
 import { HEADER_HEIGHT, computeHeaderSegments, computeTickOffsets } from '../../lib/layout';
 import type { ZoomLevel } from '../../types';
 import { isoToday } from '../../lib/dates';
+import { loadLevel } from '../../lib/capacity';
+import { useTeamCapacity } from '../../hooks/useCapacity';
+import { CapacityBadge } from './CapacityBadge';
 import styles from './TimelineHeader.module.css';
 
 interface TimelineHeaderProps {
@@ -43,6 +46,9 @@ export function TimelineHeader({
     [renderStartDate, renderEndDate, sprintAnchorDate, sprintLengthDays]
   );
 
+  // Team totals for the same bands, or null while the capacity view is off.
+  const teamCapacity = useTeamCapacity(sprints);
+
   return (
     <div className={styles.header} style={{ height: HEADER_HEIGHT }}>
       {/* Sprint labels row */}
@@ -58,6 +64,9 @@ export function TimelineHeader({
           const width = (visibleEnd - visibleStart + 1) * dayWidth;
           if (width <= 0) return null;
 
+          const teamFigure = teamCapacity?.get(sprint.startDate);
+          const isCurrent = sprint.startDate <= today && today <= sprint.endDate;
+
           return (
             <div
               key={sprint.startDate}
@@ -65,6 +74,17 @@ export function TimelineHeader({
               style={{ left, width }}
             >
               {getSprintLabel(sprint.startDate, today, sprintAnchorDate, sprintLengthDays)}
+              {teamFigure && (
+                <span
+                  className={styles.sprintCapacity}
+                  data-testid="capacity-total"
+                  data-sprint-start={sprint.startDate}
+                  data-load={loadLevel(teamFigure.load)}
+                  {...(isCurrent ? { 'data-current': 'true' } : {})}
+                >
+                  <CapacityBadge figure={teamFigure} showText={zoom !== 'quarter'} />
+                </span>
+              )}
             </div>
           );
         })}

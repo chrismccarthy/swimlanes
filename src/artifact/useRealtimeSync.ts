@@ -4,15 +4,27 @@ import { getBackend } from './backend';
 import { useAppStore } from '../store/useAppStore';
 
 export function useRealtimeSync() {
+  const boardId = useAppStore(s => s.currentBoardId);
+
   useEffect(() => {
+    if (!boardId) return;
     let cancelled = false;
     let unsubscribe: (() => void) | null = null;
 
     getBackend().then(backend => {
       if (cancelled) return;
-      unsubscribe = backend.subscribe(change => {
+      // Scoped to the board on screen; switching boards re-runs this effect
+      // and opens a fresh subscription.
+      unsubscribe = backend.subscribe(boardId, change => {
         const store = useAppStore.getState();
         switch (change.kind) {
+          case 'status':
+            // The backend reconnects itself; this only reports what it found.
+            store.setSyncStatus(change.status);
+            break;
+          case 'boards':
+            store.setBoards(change.boards);
+            break;
           case 'member':
             if (change.type === 'remove') store.removeRemoteMember(change.id);
             else store.mergeRemoteMember(change.member);
@@ -36,5 +48,5 @@ export function useRealtimeSync() {
       cancelled = true;
       unsubscribe?.();
     };
-  }, []);
+  }, [boardId]);
 }

@@ -5,8 +5,8 @@ import type { Block } from '../types';
 
 export type { BlockPatch };
 
-export async function fetchBlocks(): Promise<Block[]> {
-  return (await getBackend()).fetchBlocks();
+export async function fetchBlocks(boardId: string): Promise<Block[]> {
+  return (await getBackend()).fetchBlocks(boardId);
 }
 
 export async function fetchBlock(id: string): Promise<Block | null> {

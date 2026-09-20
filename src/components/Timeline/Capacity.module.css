@@ -1,0 +1,63 @@
+/* The badge: "7 / 10 d" plus a thin load bar, coloured by load level. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.text {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.track {
+  width: 28px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--load-track);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+
+.text.ok { color: var(--load-ok); }
+.text.high { color: var(--load-high); }
+.text.over { color: var(--load-over); }
+
+.fill.ok { background: var(--load-ok); }
+.fill.high { background: var(--load-high); }
+.fill.over { background: var(--load-over); }
+
+/*
+ * The lane strip: one segment per sprint, drawn into the lane background
+ * behind the blocks and inert to the pointer, so dragging a new block out
+ * still works right over it.
+ */
+.strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.segment {
+  position: absolute;
+  top: 0;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  padding-left: 6px;
+  overflow: hidden;
+}

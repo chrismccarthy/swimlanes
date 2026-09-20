@@ -5,14 +5,18 @@ import { ConflictError } from './errors';
 import type { Block } from '../../types';
 
 /** Fields of a block a client may write; `updatedAt` is owned by the server. */
-export type BlockPatch = Partial<Omit<Block, 'id' | 'updatedAt'>>;
+export type BlockPatch = Partial<Omit<Block, 'id' | 'boardId' | 'updatedAt'>>;
 
 interface UpdatedAtRow {
   updated_at: string;
 }
 
-export async function fetchBlocks(): Promise<Block[]> {
-  const { data, error } = await supabase.from('blocks').select('*');
+/** Blocks of one board — every read is scoped to the board on screen. */
+export async function fetchBlocks(boardId: string): Promise<Block[]> {
+  const { data, error } = await supabase
+    .from('blocks')
+    .select('*')
+    .eq('board_id', boardId);
   if (error) throw error;
   return (data as DbBlock[]).map(blockFromDb);
 }
@@ -34,11 +38,13 @@ export async function insertBlock(block: Block, userId: string): Promise<string>
     .from('blocks')
     .insert({
       id: block.id,
+      board_id: block.boardId,
       member_id: block.memberId,
       title: block.title,
       start_date: block.startDate,
       end_date: block.endDate,
       color: block.color,
+      tags: block.tags,
       created_by: userId,
       updated_by: userId,
     })
@@ -67,6 +73,7 @@ export async function updateBlockFields(
   if (patch.startDate !== undefined) dbPatch.start_date = patch.startDate;
   if (patch.endDate !== undefined) dbPatch.end_date = patch.endDate;
   if (patch.color !== undefined) dbPatch.color = patch.color;
+  if (patch.tags !== undefined) dbPatch.tags = patch.tags;
 
   const { data, error } = await supabase
     .from('blocks')

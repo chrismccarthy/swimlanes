@@ -1,0 +1,81 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+/* Reads as one input: the chips live inside the same bordered box as the field
+   you type in, and the whole box lights up when that field has focus. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 0.15s;
+}
+
+.chips:focus-within {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  border-radius: 10px;
+  background: #e2e8f0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  max-width: 100%;
+}
+
+.remove {
+  border: none;
+  background: none;
+  padding: 0 2px;
+  font-size: 14px;
+  line-height: 1;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.remove:hover {
+  color: #dc2626;
+  background: #fef2f2;
+}
+
+.remove:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 1px;
+}
+
+.input {
+  flex: 1;
+  min-width: 100px;
+  border: none;
+  outline: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 14px;
+  color: #0f172a;
+  background: transparent;
+}
+
+.error {
+  font-size: 12px;
+  color: #ef4444;
+}

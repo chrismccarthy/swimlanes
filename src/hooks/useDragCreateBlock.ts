@@ -99,6 +99,7 @@ export function useDragCreateBlock(memberId: string, renderStartDate: string) {
         startDate,
         endDate,
         color: 'blue',
+        tags: [],
         // Provisional: replaced by the server's value once the block is inserted.
         updatedAt: new Date().toISOString(),
       });

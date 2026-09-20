@@ -7,7 +7,7 @@ export function OfflineBanner() {
   if (isOnline) return null;
 
   return (
-    <div className={styles.banner}>
+    <div className={styles.banner} data-print="hide">
       You're offline — changes are paused. Reconnecting...
     </div>
   );

@@ -8,10 +8,12 @@ interface UpdatedAtRow {
   updated_at: string;
 }
 
-export async function fetchMembers(): Promise<Member[]> {
+/** Members of one board — every read is scoped to the board on screen. */
+export async function fetchMembers(boardId: string): Promise<Member[]> {
   const { data, error } = await supabase
     .from('members')
     .select('*')
+    .eq('board_id', boardId)
     .order('sort_order');
   if (error) throw error;
   return (data as DbMember[]).map(memberFromDb);
@@ -30,13 +32,14 @@ export async function fetchMember(id: string): Promise<Member | null> {
 
 /** Returns the server-assigned `updated_at` so the client stores the real value. */
 export async function insertMember(
-  member: { id: string; name: string; sortOrder: number },
+  member: { id: string; boardId: string; name: string; sortOrder: number },
   userId: string,
 ): Promise<string> {
   const { data, error } = await supabase
     .from('members')
     .insert({
       id: member.id,
+      board_id: member.boardId,
       name: member.name,
       sort_order: member.sortOrder,
       created_by: userId,

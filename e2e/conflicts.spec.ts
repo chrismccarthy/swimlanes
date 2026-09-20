@@ -22,6 +22,8 @@ const CONFLICT_SPRINT_MESSAGE = 'Someone else changed the sprint settings; showi
 
 /** Where the app keeps its data in the localStorage-backed artifact build. */
 const STORAGE_KEY = 'swimlanes.artifact.data';
+/** Where it remembers which board you were last on. */
+const BOARD_KEY = 'swimlanes.board';
 
 test.describe('conflicts', () => {
   test('two writers racing on a block: the loser toasts and shows the winner\'s title', async ({
@@ -128,17 +130,19 @@ test.describe('conflicts', () => {
     const currentSprint = page.getByText('Current Sprint');
     await expect(currentSprint).toHaveCSS('width', `${14 * DAY_WIDTH}px`);
 
-    // Stage a missed remote change to the sprint config. Nothing has written
-    // to storage yet in this fresh test, so fall back to an empty document.
-    await page.evaluate((key) => {
-      const raw = JSON.parse(localStorage.getItem(key) ?? '{"members":[],"blocks":[]}');
-      raw.sprint = {
+    // Stage a missed remote change to the current board's sprint config.
+    await page.evaluate(([key, boardKey]) => {
+      const raw = JSON.parse(localStorage.getItem(key)!);
+      const boardId = localStorage.getItem(boardKey)!;
+      raw.sprints = raw.sprints ?? {};
+      raw.sprints[boardId] = {
+        boardId,
         anchorDate: '2026-03-05',
         lengthDays: 7,
         updatedAt: new Date(Date.now() + 1000).toISOString(),
       };
       localStorage.setItem(key, JSON.stringify(raw));
-    }, STORAGE_KEY);
+    }, [STORAGE_KEY, BOARD_KEY]);
 
     await page.getByTitle('Sprint settings').click();
     await expect(page.getByRole('heading', { name: 'Sprint Settings' })).toBeVisible();

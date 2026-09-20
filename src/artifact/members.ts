@@ -2,8 +2,8 @@
 import { getBackend } from './backend';
 import type { Member } from '../types';
 
-export async function fetchMembers(): Promise<Member[]> {
-  return (await getBackend()).fetchMembers();
+export async function fetchMembers(boardId: string): Promise<Member[]> {
+  return (await getBackend()).fetchMembers(boardId);
 }
 
 export async function fetchMember(id: string): Promise<Member | null> {
@@ -11,7 +11,7 @@ export async function fetchMember(id: string): Promise<Member | null> {
 }
 
 export async function insertMember(
-  member: { id: string; name: string; sortOrder: number },
+  member: { id: string; boardId: string; name: string; sortOrder: number },
   userId: string,
 ): Promise<string> {
   void userId; // access is per-artifact, not per-user, in this build

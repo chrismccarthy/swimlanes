@@ -140,7 +140,9 @@ export async function saveBlockModal(
   page: Page,
   options: { title?: string; color?: string } = {},
 ): Promise<void> {
-  const titleInput = page.getByLabel('Title');
+  // `exact` matters: blocks carry an aria-label ("<title>, <member>, <dates>"),
+  // which a substring match on "Title" would also pick up.
+  const titleInput = page.getByLabel('Title', { exact: true });
   await expect(titleInput).toBeVisible();
   if (options.title !== undefined) {
     await titleInput.fill(options.title);
@@ -166,4 +168,43 @@ export async function createBlockByDrag(
   await dragBy(page, start, { x: days * DAY_WIDTH });
   await saveBlockModal(page, { title: options.title, color: options.color });
   await expect(blockByTitle(page, options.title)).toBeVisible();
+}
+
+// --- Boards ---------------------------------------------------------------
+
+/** The board picker in the sidebar header. */
+export function boardSwitcher(page: Page): Locator {
+  return page.getByTestId('board-switcher');
+}
+
+/** The board the switcher is currently showing. */
+export async function currentBoardName(page: Page): Promise<string> {
+  const value = await boardSwitcher(page).inputValue();
+  return boardSwitcher(page).locator(`option[value="${value}"]`).innerText();
+}
+
+/**
+ * Pick "New board…" and answer the in-app name prompt.
+ * The app switches to the new board, so wait for the switcher to show it.
+ */
+export async function createBoard(page: Page, name: string): Promise<void> {
+  await boardSwitcher(page).selectOption('__new__');
+  const dialog = page.getByRole('dialog', { name: 'New board' });
+  await dialog.getByLabel('Board name').fill(name);
+  await dialog.getByRole('button', { name: 'Create' }).click();
+  await expect
+    .poll(() => currentBoardName(page), { message: `board "${name}" should be current` })
+    .toBe(name);
+}
+
+/** Switch to an existing board by name. */
+export async function switchToBoard(page: Page, name: string): Promise<void> {
+  await boardSwitcher(page).selectOption({ label: name });
+  await expect.poll(() => currentBoardName(page)).toBe(name);
+}
+
+/** Open the Board settings modal from the switcher. */
+export async function openBoardSettings(page: Page): Promise<void> {
+  await boardSwitcher(page).selectOption('__settings__');
+  await expect(page.getByTestId('board-settings')).toBeVisible();
 }

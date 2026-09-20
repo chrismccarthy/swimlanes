@@ -1,0 +1,108 @@
+/*
+ * Print / "Save as PDF" layout. Imported globally from main.tsx.
+ *
+ * On screen the app is a fixed-size, two-pane, scrolling application. On paper
+ * there is no scrolling and no interaction, so everything the reader cannot use
+ * is removed, both panes grow to their natural size, and the whole rendered
+ * date range — not just the part that happened to be on screen — is laid out
+ * on landscape paper, scaled to the page width by `--print-scale`.
+ *
+ * Selectors stay off CSS Module class names (they are hashed at build time) and
+ * use the global `.app` class, the data-testids the components already carry,
+ * and `data-print="hide"` on the few pieces of chrome that are neither a button
+ * nor an input.
+ */
+
+/* The printed title line exists only on paper. */
+.print-title {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 10mm;
+  }
+
+  html,
+  body,
+  #root,
+  /* The on-screen shell is a 100vh column; on paper it must not clip. */
+  .app-shell {
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff;
+  }
+
+  .app-shell {
+    display: block !important;
+    width: auto !important;
+  }
+
+  /* Sprint bands, weekend shading and block colours are the content here. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Controls: nothing on paper can be clicked or typed into. */
+  .app button,
+  .app input,
+  .app form,
+  [data-print='hide'] {
+    display: none !important;
+  }
+
+  /*
+   * Let both panes grow to their natural size instead of scrolling inside a
+   * fixed viewport — `width: max-content` is what stops the (very wide)
+   * timeline wrapping under the sidebar and losing its alignment with the lane
+   * names — then shrink the whole thing to the page width. `--print-scale` is
+   * measured just before printing; see lib/printScale.ts.
+   */
+  .app {
+    display: flex !important;
+    height: auto !important;
+    width: max-content !important;
+    overflow: visible !important;
+    align-items: flex-start;
+    zoom: var(--print-scale, 1);
+  }
+
+  .app > *,
+  .app > * > * {
+    overflow: visible !important;
+  }
+
+  .app [data-testid='timeline-scroll'] {
+    overflow: visible !important;
+  }
+
+  /* Sits above `.app` in the DOM, so it heads the first page — and outside it,
+     so the scale that fits the board to the page never shrinks the title. */
+  .print-title {
+    display: flex !important;
+    gap: 10px;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 0 0 6px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #cbd5e1;
+    font-size: 11pt;
+    color: #0f172a;
+  }
+
+  .print-title span {
+    font-size: 9pt;
+    color: #475569;
+  }
+
+  /* Lane names and the sprint header must survive onto the page. */
+  .app [data-testid='member-row'],
+  .app [data-testid='swimlane'],
+  .app [data-testid='block'] {
+    break-inside: avoid;
+  }
+}

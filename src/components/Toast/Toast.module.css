@@ -20,6 +20,22 @@
   animation: slideIn 0.2s ease-out;
 }
 
+.action {
+  margin-left: 12px;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: rgba(255, 255, 255, 0.6);
+}
+
 .error {
   background: #fef2f2;
   color: #991b1b;

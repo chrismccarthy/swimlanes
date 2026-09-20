@@ -37,6 +37,11 @@ export function formatFullDate(date: string): string {
   return format(parseISO(date), 'EEE, MMM d yyyy');
 }
 
+/** Compact date for screen readers and labels, e.g. "3 Sep" */
+export function formatShortDate(date: string): string {
+  return format(parseISO(date), 'd MMM');
+}
+
 export function getDayOfWeek(date: string): string {
   return format(parseISO(date), 'EEE');
 }

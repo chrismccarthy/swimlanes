@@ -2,7 +2,14 @@ import { useRef, useCallback, useMemo, useEffect, useLayoutEffect } from 'react'
 import { flushSync } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { daysBetween, isoToday } from '../../lib/dates';
-import { dateToX, assignTracks, computeRowHeight, expansionDaysForWidth } from '../../lib/layout';
+import {
+  dateToX,
+  assignTracks,
+  computeRowHeight,
+  expansionDaysForWidth,
+  CAPACITY_STRIP_HEIGHT,
+} from '../../lib/layout';
+import { shouldCrashTimelineOnRender } from '../../lib/timelineCrashHook';
 import { TimelineHeader } from './TimelineHeader';
 import { BackgroundGrid } from './BackgroundGrid';
 import { SwimLane } from './SwimLane';
@@ -12,6 +19,10 @@ import styles from './Timeline.module.css';
 const SCROLL_BUFFER = 200; // px from edge to trigger expansion
 
 export function Timeline() {
+  if (shouldCrashTimelineOnRender()) {
+    throw new Error('Timeline crashed (test hook: ?crash=timeline)');
+  }
+
   const members = useAppStore(s => s.members);
   const blocks = useAppStore(s => s.blocks);
   const sprintAnchorDate = useAppStore(s => s.sprintAnchorDate);
@@ -23,6 +34,7 @@ export function Timeline() {
   const setSelectedBlock = useAppStore(s => s.setSelectedBlock);
   const zoom = useAppStore(s => s.zoom);
   const dayWidth = useAppStore(s => s.dayWidth);
+  const capacityEnabled = useAppStore(s => s.capacityEnabled);
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const isExpandingRef = useRef(false);
@@ -39,14 +51,15 @@ export function Timeline() {
   );
 
   const totalHeight = useMemo(() => {
+    const laneExtra = capacityEnabled ? CAPACITY_STRIP_HEIGHT : 0;
     let height = 0;
     for (const member of sortedMembers) {
       const memberBlocks = blocks.filter(b => b.memberId === member.id);
       const { trackCount } = assignTracks(memberBlocks);
-      height += computeRowHeight(trackCount);
+      height += computeRowHeight(trackCount, laneExtra);
     }
     return Math.max(height, 200); // minimum content height
-  }, [sortedMembers, blocks]);
+  }, [sortedMembers, blocks, capacityEnabled]);
 
   // Scroll to today on initial mount
   useEffect(() => {

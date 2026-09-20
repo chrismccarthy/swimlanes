@@ -32,12 +32,10 @@ test.describe('members', () => {
     await addMember(page, 'Alice');
     await expect(page.getByTestId('swimlane')).toHaveCount(1);
 
-    page.once('dialog', (dialog) => {
-      expect(dialog.type()).toBe('confirm');
-      expect(dialog.message()).toContain('Alice');
-      void dialog.accept();
-    });
     await memberRow(page, 'Alice').getByTitle('Remove member').click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toContainText('Alice');
+    await dialog.getByRole('button', { name: 'Remove' }).click();
 
     await expect(page.getByTestId('member-row')).toHaveCount(0);
     await expect(page.getByTestId('swimlane')).toHaveCount(0);
@@ -47,8 +45,8 @@ test.describe('members', () => {
   test('keeps the member when the delete confirm is dismissed', async ({ page }) => {
     await addMember(page, 'Alice');
 
-    page.once('dialog', (dialog) => void dialog.dismiss());
     await memberRow(page, 'Alice').getByTitle('Remove member').click();
+    await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click();
 
     await expect(page.getByTestId('member-row')).toHaveCount(1);
   });

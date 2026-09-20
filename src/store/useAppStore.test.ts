@@ -4,10 +4,11 @@ import {
   CONFLICT_BLOCK_MESSAGE,
   CONFLICT_MEMBER_MESSAGE,
   CONFLICT_SPRINT_MESSAGE,
+  CONFLICT_BOARD_MESSAGE,
 } from './useAppStore';
 import { ConflictError } from '../lib/supabase/errors';
 import { ZOOM_DAY_WIDTH } from '../lib/layout';
-import type { Block, Member } from '../types';
+import type { Block, BlockDraft, Board, Member } from '../types';
 
 // The data layer is mocked wholesale: Supabase is unreachable from a dev
 // machine and from CI, so these tests assert what the store does with the
@@ -34,13 +35,27 @@ vi.mock('../lib/supabase/sprintConfig', () => ({
   updateSprintConfigFields: vi.fn(),
 }));
 
+vi.mock('../lib/supabase/boards', () => ({
+  supportsMemberManagement: true,
+  memberManagementNote: '',
+  fetchBoards: vi.fn(),
+  createBoard: vi.fn(),
+  renameBoard: vi.fn(),
+  deleteBoard: vi.fn(),
+  listBoardMembers: vi.fn(),
+  addBoardMemberByEmail: vi.fn(),
+  removeBoardMember: vi.fn(),
+}));
+
 import * as membersDb from '../lib/supabase/members';
 import * as blocksDb from '../lib/supabase/blocks';
 import * as sprintDb from '../lib/supabase/sprintConfig';
+import * as boardsDb from '../lib/supabase/boards';
 
 const members = vi.mocked(membersDb);
 const blocks = vi.mocked(blocksDb);
 const sprint = vi.mocked(sprintDb);
+const boardsApi = vi.mocked(boardsDb);
 
 /** Let every pending promise chain (including the conflict resolvers) settle. */
 function flush(): Promise<void> {
@@ -50,21 +65,30 @@ function flush(): Promise<void> {
 const V1 = '2026-09-01T10:00:00.000Z';
 const V2 = '2026-09-01T11:00:00.000Z';
 
+/** Every test runs on a board; inserts are stamped with this id. */
+const BOARD = 'board-1';
+
+function makeBoard(overrides: Partial<Board> = {}): Board {
+  return { id: BOARD, name: 'Team', role: 'owner', updatedAt: V1, ...overrides };
+}
+
 function makeBlock(overrides: Partial<Block> = {}): Block {
   return {
     id: 'b1',
+    boardId: BOARD,
     memberId: 'm1',
     title: 'Design review',
     startDate: '2026-09-10',
     endDate: '2026-09-12',
     color: 'blue',
+    tags: [],
     updatedAt: V1,
     ...overrides,
   };
 }
 
 function makeMember(overrides: Partial<Member> = {}): Member {
-  return { id: 'm1', name: 'Ada', sortOrder: 1, updatedAt: V1, ...overrides };
+  return { id: 'm1', boardId: BOARD, name: 'Ada', sortOrder: 1, updatedAt: V1, ...overrides };
 }
 
 const initialState = useAppStore.getState();
@@ -83,6 +107,7 @@ beforeEach(() => {
   }
   useAppStore.setState(initialState, true);
   useAppStore.getState().setUserId('user-1');
+  useAppStore.setState({ boards: [makeBoard()], currentBoardId: BOARD });
 });
 
 describe('addMember', () => {
@@ -477,7 +502,7 @@ describe('updateSprintSettings', () => {
     useAppStore.setState({ sprintUpdatedAt: V1 });
 
     useAppStore.getState().updateSprintSettings('2026-03-05', 7);
-    expect(sprint.updateSprintConfigFields).toHaveBeenCalledWith('2026-03-05', 7, V1);
+    expect(sprint.updateSprintConfigFields).toHaveBeenCalledWith(BOARD, '2026-03-05', 7, V1);
 
     await flush();
     expect(useAppStore.getState().sprintUpdatedAt).toBe(V2);
@@ -487,6 +512,7 @@ describe('updateSprintSettings', () => {
   it('adopts the server config on a conflict', async () => {
     sprint.updateSprintConfigFields.mockRejectedValue(new ConflictError('sprint settings'));
     sprint.fetchSprintConfig.mockResolvedValue({
+      boardId: BOARD,
       anchorDate: '2026-04-01',
       lengthDays: 21,
       updatedAt: V2,
@@ -596,13 +622,68 @@ describe('setZoom', () => {
   });
 });
 
+describe('tag filter', () => {
+  it('toggles a tag on and off', () => {
+    useAppStore.getState().toggleTag('infra');
+    expect(useAppStore.getState().activeTags).toEqual(['infra']);
+
+    useAppStore.getState().toggleTag('api');
+    expect(useAppStore.getState().activeTags).toEqual(['infra', 'api']);
+
+    useAppStore.getState().toggleTag('infra');
+    expect(useAppStore.getState().activeTags).toEqual(['api']);
+  });
+
+  it('treats tags that differ only in case as the same filter', () => {
+    useAppStore.getState().toggleTag('Infra');
+    useAppStore.getState().toggleTag('INFRA');
+    expect(useAppStore.getState().activeTags).toEqual([]);
+  });
+
+  it('trims what it is given and ignores a blank tag', () => {
+    useAppStore.getState().toggleTag('  infra  ');
+    expect(useAppStore.getState().activeTags).toEqual(['infra']);
+
+    useAppStore.getState().toggleTag('   ');
+    expect(useAppStore.getState().activeTags).toEqual(['infra']);
+  });
+
+  it('clears every active tag at once', () => {
+    useAppStore.getState().toggleTag('infra');
+    useAppStore.getState().toggleTag('api');
+    useAppStore.getState().clearTags();
+    expect(useAppStore.getState().activeTags).toEqual([]);
+  });
+
+  it('drops the filter when the board changes — it belonged to the old board', () => {
+    useAppStore.setState({ boards: [makeBoard(), makeBoard({ id: 'board-2' })] });
+    useAppStore.getState().toggleTag('infra');
+
+    useAppStore.getState().setCurrentBoard('board-2');
+    expect(useAppStore.getState().activeTags).toEqual([]);
+  });
+
+  it('is not persisted: a filter is a way of looking, not a setting', () => {
+    useAppStore.getState().toggleTag('infra');
+    const stored = Object.keys(localStorage).filter(k => k.startsWith('swimlanes.'));
+    expect(stored).not.toContain('swimlanes.tags');
+    expect(
+      stored.some(k => (localStorage.getItem(k) ?? '').includes('infra')),
+    ).toBe(false);
+  });
+});
+
 describe('realtime merge helpers', () => {
   it('replaces a known block and appends an unknown one', () => {
     useAppStore.setState({ blocks: [makeBlock()] });
 
-    useAppStore.getState().mergeRemoteBlock(makeBlock({ title: 'Theirs', updatedAt: V2 }));
+    useAppStore.getState().mergeRemoteBlock(
+      makeBlock({ title: 'Theirs', tags: ['infra'], updatedAt: V2 }),
+    );
     expect(useAppStore.getState().blocks).toHaveLength(1);
     expect(useAppStore.getState().blocks[0].title).toBe('Theirs');
+    // The whole row is swapped in, so a tag someone else added arrives with it.
+    expect(useAppStore.getState().blocks[0].tags).toEqual(['infra']);
 
     useAppStore.getState().mergeRemoteBlock(makeBlock({ id: 'b2' }));
     expect(useAppStore.getState().blocks.map(b => b.id)).toEqual(['b1', 'b2']);
@@ -618,5 +699,179 @@ describe('realtime merge helpers', () => {
 
     expect(useAppStore.getState().members.map(m => m.id)).toEqual(['m2']);
     expect(useAppStore.getState().blocks.map(b => b.id)).toEqual(['b2']);
+  });
+});
+
+describe('boards', () => {
+  it('creates a board optimistically, adopts the server row and switches to it', async () => {
+    const created: Board = { id: 'b-new', name: 'Platform', role: 'owner', updatedAt: V2 };
+    boardsApi.createBoard.mockImplementation((name, id) =>
+      Promise.resolve({ ...created, id: id ?? created.id, name }));
+
+    useAppStore.getState().createBoard('Platform');
+
+    // Optimistic: the board is listed and current before the insert lands.
+    const optimistic = useAppStore.getState().boards;
+    expect(optimistic).toHaveLength(2);
+    expect(optimistic[1].name).toBe('Platform');
+    const newId = optimistic[1].id;
+    expect(useAppStore.getState().currentBoardId).toBe(newId);
+    // The generated id is handed to the data layer, so both rows are one board.
+    expect(boardsApi.createBoard).toHaveBeenCalledWith('Platform', newId);
+
+    await flush();
+    expect(useAppStore.getState().boards[1].updatedAt).toBe(V2);
+    expect(useAppStore.getState().currentBoardId).toBe(newId);
+    expect(toastMessages()).toEqual([]);
+  });
+
+  it('rolls the new board back out and returns to the previous one on failure', async () => {
+    boardsApi.createBoard.mockRejectedValue(new Error('boom'));
+
+    useAppStore.getState().createBoard('Platform');
+    expect(useAppStore.getState().boards).toHaveLength(2);
+
+    await flush();
+    expect(useAppStore.getState().boards).toEqual([makeBoard()]);
+    expect(useAppStore.getState().currentBoardId).toBe(BOARD);
+    expect(toastMessages()).toEqual(['Failed to create board']);
+  });
+
+  it('renames a board with the version it last saw, then stores the new one', async () => {
+    boardsApi.renameBoard.mockResolvedValue(V2);
+
+    useAppStore.getState().renameBoard(BOARD, 'Platform');
+    expect(useAppStore.getState().boards[0].name).toBe('Platform');
+    expect(boardsApi.renameBoard).toHaveBeenCalledWith(BOARD, 'Platform', V1);
+
+    await flush();
+    expect(useAppStore.getState().boards[0].updatedAt).toBe(V2);
+  });
+
+  it('shows the winning board list and warns when a rename conflicts', async () => {
+    boardsApi.renameBoard.mockRejectedValue(new ConflictError('board', BOARD));
+    boardsApi.fetchBoards.mockResolvedValue([makeBoard({ name: 'Renamed elsewhere', updatedAt: V2 })]);
+
+    useAppStore.getState().renameBoard(BOARD, 'Platform');
+    await flush();
+
+    expect(useAppStore.getState().boards[0].name).toBe('Renamed elsewhere');
+    expect(toastMessages()).toEqual([CONFLICT_BOARD_MESSAGE]);
+  });
+
+  it('rolls a rename back with the generic toast on a plain failure', async () => {
+    boardsApi.renameBoard.mockRejectedValue(new Error('boom'));
+
+    useAppStore.getState().renameBoard(BOARD, 'Platform');
+    await flush();
+
+    expect(useAppStore.getState().boards[0].name).toBe('Team');
+    expect(toastMessages()).toEqual(['Failed to rename board']);
+  });
+
+  it('deletes a board and moves to the one that is left', async () => {
+    boardsApi.deleteBoard.mockResolvedValue(undefined);
+    const other = makeBoard({ id: 'board-2', name: 'Platform' });
+    useAppStore.setState({ boards: [makeBoard(), other], members: [makeMember()] });
+
+    useAppStore.getState().deleteBoard(BOARD);
+
+    expect(useAppStore.getState().boards).toEqual([other]);
+    expect(useAppStore.getState().currentBoardId).toBe('board-2');
+    // Switching boards drops the previous board's rows.
+    expect(useAppStore.getState().members).toEqual([]);
+
+    await flush();
+    expect(boardsApi.deleteBoard).toHaveBeenCalledWith(BOARD);
+    expect(toastMessages()).toEqual([]);
+  });
+
+  it('restores the board when the delete fails', async () => {
+    boardsApi.deleteBoard.mockRejectedValue(new Error('boom'));
+    useAppStore.setState({ boards: [makeBoard(), makeBoard({ id: 'board-2', name: 'Platform' })] });
+
+    useAppStore.getState().deleteBoard(BOARD);
+    await flush();
+
+    expect(useAppStore.getState().boards).toHaveLength(2);
+    expect(useAppStore.getState().currentBoardId).toBe(BOARD);
+    expect(toastMessages()).toEqual(['Failed to delete board']);
+  });
+
+  it('refuses to delete your only board', () => {
+    useAppStore.getState().deleteBoard(BOARD);
+
+    expect(boardsApi.deleteBoard).not.toHaveBeenCalled();
+    expect(useAppStore.getState().boards).toHaveLength(1);
+    expect(toastMessages()).toEqual(['You cannot delete your only board']);
+  });
+
+  it('persists the current board and clears the previous board’s data on a switch', () => {
+    useAppStore.setState({
+      boards: [makeBoard(), makeBoard({ id: 'board-2', name: 'Platform' })],
+      members: [makeMember()],
+      blocks: [makeBlock()],
+      selectedBlockId: 'b1',
+    });
+
+    useAppStore.getState().setCurrentBoard('board-2');
+
+    expect(useAppStore.getState().currentBoardId).toBe('board-2');
+    expect(localStorage.getItem('swimlanes.board')).toBe('board-2');
+    expect(useAppStore.getState().members).toEqual([]);
+    expect(useAppStore.getState().blocks).toEqual([]);
+    expect(useAppStore.getState().selectedBlockId).toBeNull();
+  });
+
+  it('does not re-clear when the current board is re-selected', () => {
+    useAppStore.setState({ members: [makeMember()] });
+
+    useAppStore.getState().setCurrentBoard(BOARD);
+
+    expect(useAppStore.getState().members).toHaveLength(1);
+    expect(localStorage.getItem('swimlanes.board')).toBeNull();
+  });
+});
+
+describe('inserts are stamped with the current board', () => {
+  it('stamps a new member', () => {
+    members.insertMember.mockResolvedValue(V2);
+
+    useAppStore.getState().addMember('Grace');
+
+    expect(useAppStore.getState().members[0].boardId).toBe(BOARD);
+    expect(members.insertMember.mock.calls[0][0].boardId).toBe(BOARD);
+  });
+
+  it('stamps a block the timeline drew without knowing about boards', () => {
+    blocks.insertBlock.mockResolvedValue(V2);
+    const full = makeBlock({ id: 'b9' });
+    // What the timeline hands over: a block with no board on it.
+    const draft: BlockDraft = {
+      id: full.id,
+      memberId: full.memberId,
+      title: full.title,
+      startDate: full.startDate,
+      endDate: full.endDate,
+      color: full.color,
+      tags: full.tags,
+      updatedAt: full.updatedAt,
+    };
+
+    useAppStore.getState().addBlock(draft);
+
+    expect(useAppStore.getState().blocks[0].boardId).toBe(BOARD);
+    expect(blocks.insertBlock.mock.calls[0][0].boardId).toBe(BOARD);
+  });
+
+  it('stamps a duplicated block with the board it is on now', () => {
+    blocks.insertBlock.mockResolvedValue(V2);
+    useAppStore.setState({ blocks: [makeBlock({ boardId: 'board-old' })] });
+
+    useAppStore.getState().duplicateBlock('b1');
+
+    const copy = useAppStore.getState().blocks[1];
+    expect(copy.boardId).toBe(BOARD);
+    expect(blocks.insertBlock.mock.calls[0][0].boardId).toBe(BOARD);
   });
 });

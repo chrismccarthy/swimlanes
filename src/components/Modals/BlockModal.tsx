@@ -1,9 +1,11 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/useAppStore';
 import type { BlockColor } from '../../types';
 import { daysBetween } from '../../lib/dates';
+import { distinctTags } from '../../lib/tags';
 import { ColorPicker } from './ColorPicker';
+import { TagInput } from './TagInput';
 import styles from './BlockModal.module.css';
 
 function BlockModalInner({ blockId }: { blockId: string }) {
@@ -23,6 +25,11 @@ function BlockModalInner({ blockId }: { blockId: string }) {
   const [startDate, setStartDate] = useState(block?.startDate ?? '');
   const [endDate, setEndDate] = useState(block?.endDate ?? '');
   const [color, setColor] = useState<BlockColor>(block?.color ?? 'blue');
+  const [tags, setTags] = useState<string[]>(block?.tags ?? []);
+
+  // Completions come from the rest of the board, so a team converges on one
+  // spelling of a tag instead of inventing a new one on every block.
+  const suggestions = useMemo(() => distinctTags(blocks), [blocks]);
 
   const handleCancel = useCallback(() => {
     // Draft block was never inserted into DB, so just close — no cleanup needed
@@ -34,12 +41,12 @@ function BlockModalInner({ blockId }: { blockId: string }) {
     if (daysBetween(startDate, endDate) < 0) return;
     if (blockId === newBlockId) {
       // New block — insert into DB for the first time
-      addBlock({ ...block, title: title.trim(), startDate, endDate, color });
+      addBlock({ ...block, title: title.trim(), startDate, endDate, color, tags });
     } else {
-      updateBlock(blockId, { title: title.trim(), startDate, endDate, color });
+      updateBlock(blockId, { title: title.trim(), startDate, endDate, color, tags });
     }
     closeModal();
-  }, [blockId, newBlockId, block, title, startDate, endDate, color, addBlock, updateBlock, closeModal]);
+  }, [blockId, newBlockId, block, title, startDate, endDate, color, tags, addBlock, updateBlock, closeModal]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') handleCancel();
@@ -67,6 +74,8 @@ function BlockModalInner({ blockId }: { blockId: string }) {
             autoFocus
           />
         </label>
+
+        <TagInput tags={tags} onChange={setTags} suggestions={suggestions} />
 
         <div className={styles.dateRow}>
           <label className={styles.label}>

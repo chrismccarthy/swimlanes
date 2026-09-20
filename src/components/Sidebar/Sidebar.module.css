@@ -24,7 +24,15 @@
   justify-content: space-between;
 }
 
+.headerBottom {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .zoomControl {
+  flex: 1;
+  min-width: 0;
   display: flex;
   border: 1px solid #cbd5e1;
   border-radius: 5px;
@@ -66,12 +74,85 @@
   color: #fff;
 }
 
-.title {
+/* Checkbox-style toggle, sized to sit beside the zoom control. */
+.capacityBtn {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  line-height: 1.5;
+}
+
+.capacityBtn:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.capacityBtn:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.capacityBtnActive,
+.capacityBtnActive:hover {
+  background: #3b82f6;
+  border-color: #3b82f6;
+  color: #fff;
+}
+
+.capacityMark {
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Current-sprint load for this member, right-aligned next to the name. */
+.memberLoad {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.memberLoad.ok { color: var(--load-ok); }
+.memberLoad.high { color: var(--load-high); }
+.memberLoad.over { color: var(--load-over); }
+
+/* Board picker: reads as the sidebar title until you reach for it. */
+.boardSwitcher {
+  flex: 1;
+  min-width: 0;
+  margin-right: 4px;
+  padding: 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  font-family: inherit;
   font-size: 13px;
   font-weight: 700;
   color: #0f172a;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  cursor: pointer;
+  outline: none;
+}
+
+.boardSwitcher:hover {
+  border-color: #cbd5e1;
+  background: #fff;
+}
+
+.boardSwitcher:focus-visible {
+  border-color: #3b82f6;
+  background: #fff;
 }
 
 .gearBtn {
@@ -176,6 +257,74 @@
   font-size: 12px;
   color: #94a3b8;
   text-align: center;
+}
+
+/* Connection light, pinned under the add-member form. */
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+
+.syncPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  cursor: default;
+  user-select: none;
+}
+
+.syncDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* Healthy: barely there. */
+.sync_live {
+  color: #94a3b8;
+}
+
+.sync_live .syncDot {
+  background: #22c55e;
+}
+
+/* Stale: worth noticing without shouting. */
+.sync_reconnecting {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.sync_reconnecting .syncDot {
+  animation: syncPulse 1.2s ease-in-out infinite;
+}
+
+.sync_offline {
+  color: #b91c1c;
+  background: #fee2e2;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync_reconnecting .syncDot {
+    animation: none;
+  }
 }
 
 .addForm {

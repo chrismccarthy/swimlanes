@@ -28,6 +28,39 @@
   z-index: 3;
 }
 
+/* Keyboard focus: the same blue as selection, ringed in white so it reads
+   against a block of any colour. */
+.block:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #3b82f6;
+  z-index: 4;
+}
+
+/* Tag chips sit after the title, tinted by the block's own text colour so they
+   read on every palette entry without a second colour table. */
+.tag,
+.tagOverflow {
+  flex-shrink: 0;
+  margin-left: 4px;
+  padding: 1px 6px;
+  max-width: 88px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.55);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.tagOverflow {
+  background: none;
+  opacity: 0.7;
+  padding: 1px 2px;
+}
+
 .title {
   font-size: 12px;
   font-weight: 600;

@@ -1,4 +1,16 @@
-import type { BlockColor } from '../types';
+/**
+ * The block palette, and the single source of truth for it.
+ *
+ * `BlockColor` is derived from this list (and re-exported from `src/types`), and
+ * the `blocks_color_valid` CHECK constraint in
+ * `supabase/migrations/006_constraints.sql` must contain exactly these values —
+ * `colors.test.ts` parses the migration and asserts it.
+ */
+export const ALL_COLORS = [
+  'blue', 'green', 'amber', 'red', 'purple', 'pink', 'teal', 'orange',
+] as const;
+
+export type BlockColor = (typeof ALL_COLORS)[number];
 
 export interface ColorScheme {
   bg: string;
@@ -16,7 +28,3 @@ export const BLOCK_COLORS: Record<BlockColor, ColorScheme> = {
   teal:   { bg: '#CCFBF1', text: '#115E59', border: '#5EEAD4' },
   orange: { bg: '#FFEDD5', text: '#9A3412', border: '#FDBA74' },
 };
-
-export const ALL_COLORS: BlockColor[] = [
-  'blue', 'green', 'amber', 'red', 'purple', 'pink', 'teal', 'orange',
-];

@@ -6,7 +6,7 @@
  * recognise the exact same ConflictError class.
  */
 
-export type ConflictEntity = 'block' | 'member' | 'sprint settings';
+export type ConflictEntity = 'block' | 'member' | 'board' | 'sprint settings';
 
 /**
  * Thrown when a conditional update matched no row, i.e. the row's `updated_at`

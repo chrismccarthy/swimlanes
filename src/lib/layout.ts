@@ -22,12 +22,34 @@ export const ZOOM_DAY_WIDTH: Record<ZoomLevel, number> = {
 export const DAY_WIDTH = ZOOM_DAY_WIDTH.day;
 export const DRAG_THRESHOLD = 3; // px of movement before a drag is recognised
 export const MIN_ROW_HEIGHT = 56;
+/**
+ * Height of the per-sprint capacity strip drawn along the top of a lane.
+ * Rows grow by this much when the capacity view is on, so the strip never
+ * sits under a block.
+ */
+export const CAPACITY_STRIP_HEIGHT = 14;
 export const BLOCK_HEIGHT = 40;
 export const BLOCK_GAP = 8;
 export const HEADER_HEIGHT = 56;
 export const SIDEBAR_WIDTH = 200;
 /** Below this rendered width a block shows its title only as a tooltip */
 export const MIN_TITLE_WIDTH = 24;
+/** A block needs at least this much width before a tag chip fits beside the title */
+export const MIN_ONE_TAG_WIDTH = 120;
+/** ...and this much before a second one does */
+export const MIN_TWO_TAG_WIDTH = 190;
+
+/**
+ * How many tag chips a block of this rendered width can show (0, 1 or 2).
+ * Quarter zoom shows none at all: at 8px per day even a long block is a sliver,
+ * and the tags are still in the block's tooltip.
+ */
+export function visibleTagCount(width: number, zoom: ZoomLevel): number {
+  if (zoom === 'quarter') return 0;
+  if (width >= MIN_TWO_TAG_WIDTH) return 2;
+  if (width >= MIN_ONE_TAG_WIDTH) return 1;
+  return 0;
+}
 
 /** Convert an ISO date to its pixel x-offset relative to a reference date */
 export function dateToX(date: string, referenceDate: string, dayWidth: number = DAY_WIDTH): number {
@@ -191,10 +213,35 @@ export function assignTracks(blocks: Block[]): { assignments: TrackAssignment[];
   return { assignments, trackCount: tracks.length };
 }
 
-/** Compute the dynamic row height for a swim lane based on how many tracks it needs */
-export function computeRowHeight(trackCount: number): number {
-  if (trackCount === 0) return MIN_ROW_HEIGHT;
-  return Math.max(MIN_ROW_HEIGHT, trackCount * (BLOCK_HEIGHT + BLOCK_GAP) + BLOCK_GAP);
+/**
+ * Compute the dynamic row height for a swim lane based on how many tracks it
+ * needs. `extraHeight` is reserved above the tracks — the capacity strip asks
+ * for `CAPACITY_STRIP_HEIGHT` there — and is added on top of the minimum, so
+ * the minimum row height itself never changes.
+ */
+export function computeRowHeight(trackCount: number, extraHeight = 0): number {
+  const tracksHeight = trackCount === 0
+    ? MIN_ROW_HEIGHT
+    : Math.max(MIN_ROW_HEIGHT, trackCount * (BLOCK_HEIGHT + BLOCK_GAP) + BLOCK_GAP);
+  return tracksHeight + extraHeight;
+}
+
+/**
+ * Pixel geometry of an inclusive date range clipped to the rendered day range,
+ * or null when it falls entirely outside it.
+ */
+export function rangeGeometry(
+  startDate: string,
+  endDate: string,
+  renderStartDate: string,
+  totalDays: number,
+  dayWidth: number
+): { left: number; width: number } | null {
+  const visibleStart = Math.max(0, daysBetween(renderStartDate, startDate));
+  const visibleEnd = Math.min(totalDays - 1, daysBetween(renderStartDate, endDate));
+  const width = (visibleEnd - visibleStart + 1) * dayWidth;
+  if (width <= 0) return null;
+  return { left: visibleStart * dayWidth, width };
 }
 
 /** Compute the top offset of a block within its swim lane row */

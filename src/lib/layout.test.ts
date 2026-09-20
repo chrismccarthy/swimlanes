@@ -4,6 +4,8 @@ import {
   BLOCK_HEIGHT,
   BLOCK_GAP,
   MIN_ROW_HEIGHT,
+  CAPACITY_STRIP_HEIGHT,
+  rangeGeometry,
   dateToX,
   xToDate,
   assignTracks,
@@ -13,6 +15,9 @@ import {
   computeTickOffsets,
   showsWeekendShading,
   expansionDaysForWidth,
+  visibleTagCount,
+  MIN_ONE_TAG_WIDTH,
+  MIN_TWO_TAG_WIDTH,
 } from './layout';
 import type { Block, ZoomLevel } from '../types';
 
@@ -21,11 +26,13 @@ const REF = '2026-09-01'; // Tuesday
 function block(id: string, startDate: string, endDate: string): Block {
   return {
     id,
+    boardId: 'board-1',
     memberId: 'm1',
     title: id,
     startDate,
     endDate,
     color: 'blue',
+    tags: [],
     updatedAt: '2026-09-01T00:00:00.000Z',
   };
 }
@@ -204,6 +211,62 @@ describe('computeRowHeight / blockTopOffset', () => {
     const lastBottom = blockTopOffset(tracks - 1) + BLOCK_HEIGHT;
     expect(computeRowHeight(tracks) - lastBottom).toBe(BLOCK_GAP);
   });
+
+  it('adds reserved height on top of the row, leaving the minimum alone', () => {
+    // The capacity strip reserves a band above the tracks. The tracks keep the
+    // height they would have had, so nothing overlaps.
+    for (const tracks of [0, 1, 2, 5]) {
+      expect(computeRowHeight(tracks, CAPACITY_STRIP_HEIGHT))
+        .toBe(computeRowHeight(tracks) + CAPACITY_STRIP_HEIGHT);
+    }
+    expect(computeRowHeight(0, CAPACITY_STRIP_HEIGHT)).toBe(MIN_ROW_HEIGHT + CAPACITY_STRIP_HEIGHT);
+  });
+
+  it('reserves nothing by default', () => {
+    expect(computeRowHeight(2, 0)).toBe(computeRowHeight(2));
+  });
+});
+
+describe('rangeGeometry', () => {
+  const START = '2026-09-01';
+  const TOTAL_DAYS = 30;
+
+  it('places a range fully inside the rendered window', () => {
+    expect(rangeGeometry('2026-09-03', '2026-09-05', START, TOTAL_DAYS, 40)).toEqual({
+      left: 2 * 40,
+      width: 3 * 40,
+    });
+  });
+
+  it('clips a range that starts before the window', () => {
+    expect(rangeGeometry('2026-08-25', '2026-09-02', START, TOTAL_DAYS, 40)).toEqual({
+      left: 0,
+      width: 2 * 40,
+    });
+  });
+
+  it('clips a range that runs past the end of the window', () => {
+    // The window covers Sep 1..Sep 30 (30 days).
+    expect(rangeGeometry('2026-09-29', '2026-10-15', START, TOTAL_DAYS, 40)).toEqual({
+      left: 28 * 40,
+      width: 2 * 40,
+    });
+  });
+
+  it('is null for a range entirely outside the window', () => {
+    expect(rangeGeometry('2026-07-01', '2026-07-10', START, TOTAL_DAYS, 40)).toBeNull();
+    expect(rangeGeometry('2026-11-01', '2026-11-10', START, TOTAL_DAYS, 40)).toBeNull();
+  });
+
+  it('scales with the day width', () => {
+    for (const zoom of ZOOMS) {
+      const width = ZOOM_DAY_WIDTH[zoom];
+      expect(rangeGeometry('2026-09-08', '2026-09-21', START, TOTAL_DAYS, width)).toEqual({
+        left: 7 * width,
+        width: 14 * width,
+      });
+    }
+  });
 });
 
 describe('computeHeaderSegments', () => {
@@ -309,5 +372,25 @@ describe('expansionDaysForWidth', () => {
       expect(days).toBeLessThanOrEqual(prev);
       prev = days;
     }
+  });
+});
+
+describe('visibleTagCount', () => {
+  it('shows more chips as the block gets wider', () => {
+    expect(visibleTagCount(MIN_ONE_TAG_WIDTH - 1, 'day')).toBe(0);
+    expect(visibleTagCount(MIN_ONE_TAG_WIDTH, 'day')).toBe(1);
+    expect(visibleTagCount(MIN_TWO_TAG_WIDTH - 1, 'day')).toBe(1);
+    expect(visibleTagCount(MIN_TWO_TAG_WIDTH, 'day')).toBe(2);
+    expect(visibleTagCount(4000, 'day')).toBe(2);
+  });
+
+  it('applies the same thresholds at week zoom', () => {
+    expect(visibleTagCount(MIN_TWO_TAG_WIDTH, 'week')).toBe(2);
+    expect(visibleTagCount(MIN_ONE_TAG_WIDTH, 'week')).toBe(1);
+    expect(visibleTagCount(20, 'week')).toBe(0);
+  });
+
+  it('shows none at quarter zoom, however long the block is', () => {
+    expect(visibleTagCount(4000, 'quarter')).toBe(0);
   });
 });

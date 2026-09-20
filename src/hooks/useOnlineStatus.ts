@@ -1,31 +1,18 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { fetchMembers } from '../lib/supabase/members';
-import { fetchBlocks } from '../lib/supabase/blocks';
-import { fetchSprintConfig } from '../lib/supabase/sprintConfig';
 
 export function useOnlineStatus() {
   const setOnline = useAppStore(s => s.setOnline);
-  const setMembers = useAppStore(s => s.setMembers);
-  const setBlocks = useAppStore(s => s.setBlocks);
-  const setSprintConfig = useAppStore(s => s.setSprintConfig);
-
-  const refetchAll = useCallback(() => {
-    Promise.all([fetchMembers(), fetchBlocks(), fetchSprintConfig()])
-      .then(([members, blocks, sprintConfig]) => {
-        setMembers(members);
-        setBlocks(blocks);
-        setSprintConfig(sprintConfig);
-      })
-      .catch(() => {
-        useAppStore.getState().addToast('Failed to refresh data after reconnect', 'error');
-      });
-  }, [setMembers, setBlocks, setSprintConfig]);
 
   useEffect(() => {
     const handleOnline = () => {
       setOnline(true);
-      refetchAll();
+      // Read the board at reconnect time, not at render time, so a switch that
+      // happened while offline is honoured. `reconcileBoard` is the same
+      // refetch-and-merge the realtime hook runs after a dropped channel.
+      const store = useAppStore.getState();
+      const boardId = store.currentBoardId;
+      if (boardId) void store.reconcileBoard(boardId);
     };
     const handleOffline = () => setOnline(false);
 
@@ -38,5 +25,5 @@ export function useOnlineStatus() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
-  }, [setOnline, refetchAll]);
+  }, [setOnline]);
 }

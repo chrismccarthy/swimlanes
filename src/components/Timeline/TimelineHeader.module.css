@@ -32,6 +32,17 @@
   white-space: nowrap;
 }
 
+/* Team total for the sprint, pinned to the right-hand end of the band. */
+.sprintCapacity {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0 8px 0 6px;
+  /* The band label is uppercase and tracked out; the figure is not. */
+  text-transform: none;
+  letter-spacing: normal;
+}
+
 .dayRow {
   position: relative;
   height: 30px;

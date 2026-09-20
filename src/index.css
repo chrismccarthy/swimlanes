@@ -18,3 +18,16 @@ html, body {
 #root {
   height: 100%;
 }
+
+/*
+ * Capacity load colours. These are semantic — under / near / over capacity —
+ * and deliberately separate from the block palette in src/lib/colors.ts, which
+ * is a user-chosen decoration. The timeline strip and the sidebar figure share
+ * them, so they live here rather than in either CSS module.
+ */
+:root {
+  --load-ok: #16a34a;
+  --load-high: #d97706;
+  --load-over: #dc2626;
+  --load-track: #e2e8f0;
+}

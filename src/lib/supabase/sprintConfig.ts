@@ -8,11 +8,12 @@ interface UpdatedAtRow {
   updated_at: string;
 }
 
-export async function fetchSprintConfig(): Promise<SprintConfig> {
+/** One row per board since migration 007; a trigger creates it with the board. */
+export async function fetchSprintConfig(boardId: string): Promise<SprintConfig> {
   const { data, error } = await supabase
     .from('sprint_config')
     .select('*')
-    .eq('id', 1)
+    .eq('board_id', boardId)
     .single();
   if (error) throw error;
   return sprintConfigFromDb(data as DbSprintConfig);
@@ -25,6 +26,7 @@ export async function fetchSprintConfig(): Promise<SprintConfig> {
  * @returns the new `updated_at` to store as the client's version token.
  */
 export async function updateSprintConfigFields(
+  boardId: string,
   anchorDate: string,
   lengthDays: number,
   expectedUpdatedAt: string,
@@ -32,7 +34,7 @@ export async function updateSprintConfigFields(
   const { data, error } = await supabase
     .from('sprint_config')
     .update({ anchor_date: anchorDate, length_days: lengthDays })
-    .eq('id', 1)
+    .eq('board_id', boardId)
     .eq('updated_at', expectedUpdatedAt)
     .select('updated_at');
   if (error) throw error;

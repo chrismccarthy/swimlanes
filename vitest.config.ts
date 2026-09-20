@@ -14,7 +14,10 @@ export default defineConfig({
     // explicitly, so `tsconfig.app.json` needs no extra `types` entry.
     globals: false,
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    // `supabase/migrations.test.ts` boots an in-memory Postgres (PGlite) and
+    // applies the migrations; it carries a `// @vitest-environment node` pragma
+    // because it must not run in jsdom.
+    include: ['src/**/*.test.{ts,tsx}', 'supabase/**/*.test.ts'],
     // `src/lib/supabase/client.ts` throws at import time without these, which
     // would break any test that imports the store without mocking the data
     // layer. Nothing ever connects: the credentials are placeholders and the

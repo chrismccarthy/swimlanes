@@ -15,10 +15,12 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: [
+      { find: /^.*\/lib\/supabase\/boards$/, replacement: art('boards.ts') },
       { find: /^.*\/lib\/supabase\/members$/, replacement: art('members.ts') },
       { find: /^.*\/lib\/supabase\/blocks$/, replacement: art('blocks.ts') },
       { find: /^.*\/lib\/supabase\/sprintConfig$/, replacement: art('sprintConfig.ts') },
       { find: /^.*\/lib\/supabase\/client$/, replacement: art('client.ts') },
+      { find: /^.*\/lib\/supabase\/icsTokens$/, replacement: art('icsTokens.ts') },
       { find: /^.*\/hooks\/useRealtimeSync$/, replacement: art('useRealtimeSync.ts') },
       { find: /^.*\/contexts\/AuthContext$/, replacement: art('AuthContext.tsx') },
     ],
